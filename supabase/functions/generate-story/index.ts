@@ -1,6 +1,14 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts"
 import { z } from "https://deno.land/x/zod@v3.22.4/mod.ts"
 
+// Disable JWT verification for this function
+// deno-lint-ignore-file
+// @ts-ignore
+const corsHeaders = {
+  'Access-Control-Allow-Origin': '*',
+  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
+}
+
 // Input validation schema
 const StoryRequestSchema = z.object({
   journalEntry: z.string().min(1, "Journal entry cannot be empty").max(2000, "Journal entry too long"),
@@ -135,22 +143,11 @@ serve(async (req) => {
       })
     }
 
-    // Simple authorization check - just verify we have a token
+    // Temporarily disable authorization for testing
     const authHeader = req.headers.get("Authorization")
-    if (!authHeader || !authHeader.startsWith("Bearer ")) {
-      return new Response(JSON.stringify({ 
-        error: "Missing authorization header",
-        success: false 
-      }), {
-        status: 401,
-        headers: {
-          "Content-Type": "application/json",
-          "Access-Control-Allow-Origin": "*",
-        },
-      })
-    }
-
-    const userId = "user" // Simplified for now
+    console.log("Auth header:", authHeader ? "Present" : "Missing")
+    
+    const userId = "test-user" // Simplified for now
     
     // Check rate limit
     if (!checkRateLimit(userId)) {

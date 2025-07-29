@@ -14,7 +14,7 @@ export class RunwareService {
   private supabaseUrl: string;
 
   constructor() {
-    this.supabaseUrl = import.meta.env.VITE_SUPABASE_URL || '';
+    this.supabaseUrl = "https://iwwvjecrvgrdyptxhnwj.supabase.co";
   }
 
   async generateImage(params: GenerateImageParams): Promise<GeneratedImage> {

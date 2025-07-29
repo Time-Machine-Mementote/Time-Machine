@@ -16,7 +16,7 @@ export class OpenAIService {
   private supabaseUrl: string;
 
   constructor() {
-    this.supabaseUrl = import.meta.env.VITE_SUPABASE_URL || '';
+    this.supabaseUrl = "https://iwwvjecrvgrdyptxhnwj.supabase.co";
   }
 
   async generateStory(params: GenerateStoryParams): Promise<GeneratedStory> {
@@ -30,6 +30,7 @@ export class OpenAIService {
       }
       
       console.log('Making request to Edge Function with token:', session.access_token.substring(0, 20) + '...')
+      console.log('Request URL:', `${this.supabaseUrl}/functions/v1/generate-story`)
       
       const response = await fetch(`${this.supabaseUrl}/functions/v1/generate-story`, {
         method: 'POST',
