@@ -8,6 +8,7 @@ export interface JournalEntry {
   mediaFiles?: MediaFile[];
   memoryGenerated?: boolean;
   memory?: GeneratedMemory;
+  generatedMemory?: GeneratedMemory;
   recallCount?: number;
   isFavorite?: boolean;
 }
@@ -22,12 +23,14 @@ export interface MediaFile {
 
 export interface GeneratedMemory {
   id: string;
-  title: string;
+  entryId: string;
+  title?: string;
   story: string;
   audioUrl?: string;
   imageUrl?: string;
   videoUrl?: string;
-  generatedAt: number;
+  createdAt: string;
+  generatedAt?: number;
 }
 
 const STORAGE_KEY = 'timeMachine_journalEntries';

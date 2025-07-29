@@ -1,6 +1,6 @@
 import { ReactNode } from 'react';
 import { Link, useLocation } from 'react-router-dom';
-import { Clock, PenTool, Search } from 'lucide-react';
+import { Clock, PenTool, Search, Settings } from 'lucide-react';
 
 interface LayoutProps {
   children: ReactNode;
@@ -55,6 +55,15 @@ const Layout = ({ children }: LayoutProps) => {
             >
               <Search className="w-5 h-5" />
               <span>Take Me Back</span>
+            </Link>
+            <Link
+              to="/settings"
+              className={`nav-link flex items-center space-x-2 ${
+                location.pathname === '/settings' ? 'text-primary' : ''
+              }`}
+            >
+              <Settings className="w-5 h-5" />
+              <span>Settings</span>
             </Link>
           </div>
         </nav>

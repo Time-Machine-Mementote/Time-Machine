@@ -1,9 +1,11 @@
 import { useState } from 'react';
-import { Heart, Clock, Play, Eye, MoreVertical, Mic, Image, FileText } from 'lucide-react';
+import { Heart, Clock, Play, Eye, MoreVertical, Mic, Image, FileText, Sparkles } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Card, CardContent, CardHeader } from '@/components/ui/card';
 import { journalStorage, type JournalEntry } from '@/utils/journalStorage';
+import { MemoryService } from '@/services/memoryService';
+import { toast } from 'sonner';
 import { cn } from '@/lib/utils';
 
 interface MemoryCardProps {
@@ -14,6 +16,8 @@ interface MemoryCardProps {
 const MemoryCard = ({ entry, onToggleFavorite }: MemoryCardProps) => {
   const [isExpanded, setIsExpanded] = useState(false);
   const [isPlaying, setIsPlaying] = useState(false);
+  const [isGeneratingMemory, setIsGeneratingMemory] = useState(false);
+  const memoryService = new MemoryService();
 
   const formatDate = (timestamp: number) => {
     return new Date(timestamp).toLocaleDateString('en-US', {
@@ -190,30 +194,65 @@ const MemoryCard = ({ entry, onToggleFavorite }: MemoryCardProps) => {
               </Button>
             )}
 
-            {entry.memory && (
+            {entry.generatedMemory ? (
               <Button
                 variant="outline"
                 size="sm"
                 className="text-xs"
                 onClick={() => {
-                  // TODO: Open memory player modal
-                  console.log('Open AI story:', entry.memory);
+                  if (entry.generatedMemory?.audioUrl) {
+                    const audio = new Audio(entry.generatedMemory.audioUrl);
+                    audio.play();
+                  }
                 }}
               >
                 ✨ Story
+              </Button>
+            ) : (
+              <Button
+                variant="outline"
+                size="sm"
+                className="text-xs"
+                onClick={async () => {
+                  if (!memoryService.hasValidConfiguration()) {
+                    toast.error('Please configure your API keys in Settings first');
+                    return;
+                  }
+                  setIsGeneratingMemory(true);
+                  try {
+                    await memoryService.generateMemory({
+                      entryId: entry.id,
+                      generateImage: memoryService.canGenerateImages()
+                    });
+                  } finally {
+                    setIsGeneratingMemory(false);
+                  }
+                }}
+                disabled={isGeneratingMemory}
+              >
+                <Sparkles className="w-3 h-3 mr-1" />
+                {isGeneratingMemory ? 'Generating...' : 'Generate'}
               </Button>
             )}
           </div>
 
           {/* Memory Story Preview */}
-          {isExpanded && entry.memory && (
+          {isExpanded && entry.generatedMemory && (
             <div className="mt-4 p-4 bg-primary/5 rounded-lg border border-primary/20">
-              <h4 className="font-crimson font-semibold text-primary mb-2">
+              <h4 className="font-crimson font-semibold text-primary mb-2 flex items-center gap-2">
+                <Sparkles className="w-4 h-4" />
                 AI Generated Story
               </h4>
-              <p className="text-sm text-muted-foreground">
-                {truncateText(entry.memory.story, 200)}
+              <p className="text-sm text-muted-foreground mb-3">
+                {truncateText(entry.generatedMemory.story, 200)}
               </p>
+              {entry.generatedMemory.imageUrl && (
+                <img 
+                  src={entry.generatedMemory.imageUrl} 
+                  alt="Generated memory visualization"
+                  className="w-full h-32 object-cover rounded-lg border"
+                />
+              )}
             </div>
           )}
         </div>
