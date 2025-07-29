@@ -12,7 +12,7 @@ interface ApiKeys {
   runwareKey: string;
 }
 
-export default function Settings() {
+const Settings = () => {
   const [apiKeys, setApiKeys] = useState<ApiKeys>({
     openaiKey: '',
     runwareKey: ''
@@ -171,4 +171,6 @@ export default function Settings() {
       </div>
     </Layout>
   );
-}
+};
+
+export default Settings;
