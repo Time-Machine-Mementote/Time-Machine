@@ -8,7 +8,8 @@ import { PenTool, Mic, Image, Save, Loader } from 'lucide-react';
 import { toast } from 'sonner';
 import VoiceRecorder from '@/components/VoiceRecorder';
 import MediaUpload from '@/components/MediaUpload';
-import { journalStorage, type MediaFile } from '@/utils/journalStorage';
+import { databaseService } from '@/services/databaseService';
+import type { MediaFile } from '@/types/journal';
 
 const JournalEntry = () => {
   const navigate = useNavigate();
@@ -33,13 +34,35 @@ const JournalEntry = () => {
     setIsLoading(true);
 
     try {
-      const entry = journalStorage.saveEntry({
+      // Check if user is authenticated
+      const isAuthenticated = await databaseService.isAuthenticated();
+      if (!isAuthenticated) {
+        toast.error('Please sign in to save your journal entry');
+        setIsLoading(false);
+        return;
+      }
+
+      // Prepare media files data
+      const mediaFilesData = mediaFiles.length > 0 ? mediaFiles.map(file => ({
+        id: file.id,
+        name: file.name,
+        type: file.type,
+        size: file.size,
+        url: file.url
+      })) : null;
+
+      // Create journal entry in database
+      const entry = await databaseService.createJournalEntry({
         title: title.trim(),
         content: content.trim(),
-        type: activeTab as 'text' | 'voice' | 'media',
-        audioBlob: audioBlob || undefined,
-        mediaFiles: mediaFiles.length > 0 ? mediaFiles : undefined,
+        entry_type: activeTab as 'text' | 'voice' | 'media',
+        media_files: mediaFilesData,
+        // You can add mood and tags later if needed
       });
+
+      if (!entry) {
+        throw new Error('Failed to create journal entry');
+      }
 
       toast.success('Journal entry saved successfully!', {
         description: 'Your memory is being processed...',

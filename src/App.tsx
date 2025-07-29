@@ -4,10 +4,10 @@ import { TooltipProvider } from "@/components/ui/tooltip";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { BrowserRouter, Routes, Route } from "react-router-dom";
 import Layout from "./components/Layout";
+import { AuthGuard } from "./components/AuthGuard";
 import Index from "./pages/Index";
 import JournalEntry from "./pages/JournalEntry";
 import TakeMeBack from "./pages/TakeMeBack";
-
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
@@ -18,16 +18,18 @@ const App = () => (
       <Toaster />
       <Sonner />
       <BrowserRouter>
-        <Layout>
-          <Routes>
-            <Route path="/" element={<Index />} />
-            <Route path="/journal" element={<JournalEntry />} />
-            <Route path="/take-me-back" element={<TakeMeBack />} />
+        <AuthGuard>
+          <Layout>
+            <Routes>
+              <Route path="/" element={<Index />} />
+              <Route path="/journal" element={<JournalEntry />} />
+              <Route path="/take-me-back" element={<TakeMeBack />} />
 
-            {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
-            <Route path="*" element={<NotFound />} />
-          </Routes>
-        </Layout>
+              {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
+              <Route path="*" element={<NotFound />} />
+            </Routes>
+          </Layout>
+        </AuthGuard>
       </BrowserRouter>
     </TooltipProvider>
   </QueryClientProvider>

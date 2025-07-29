@@ -3,7 +3,12 @@ import { Search, Clock, Heart, Shuffle, Calendar, Filter } from 'lucide-react';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
-import { journalStorage, type JournalEntry } from '@/utils/journalStorage';
+import { databaseService } from '@/services/databaseService';
+import type { Database } from '@/integrations/supabase/types';
+
+type JournalEntry = Database['public']['Tables']['journal_entries']['Row'] & {
+  generated_memory?: Database['public']['Tables']['generated_memories']['Row'];
+};
 import MemoryCard from '@/components/MemoryCard';
 
 const TakeMeBack = () => {
@@ -15,9 +20,9 @@ const TakeMeBack = () => {
 
   // Load entries on component mount
   useEffect(() => {
-    const loadEntries = () => {
+    const loadEntries = async () => {
       try {
-        const allEntries = journalStorage.getEntries();
+        const allEntries = await databaseService.getJournalEntriesWithMemories();
         setEntries(allEntries);
         setIsLoading(false);
       } catch (error) {
@@ -36,12 +41,13 @@ const TakeMeBack = () => {
     // Apply filter
     switch (selectedFilter) {
       case 'favorites':
-        filtered = filtered.filter(entry => entry.isFavorite);
+        // TODO: Add favorite filtering when implemented
+        filtered = filtered.filter(entry => false);
         break;
       case 'text':
       case 'voice':
       case 'media':
-        filtered = filtered.filter(entry => entry.type === selectedFilter);
+        filtered = filtered.filter(entry => entry.entry_type === selectedFilter);
         break;
       default:
         break;
@@ -65,27 +71,17 @@ const TakeMeBack = () => {
     const randomIndex = Math.floor(Math.random() * entries.length);
     const randomEntry = entries[randomIndex];
     
-    // Increment recall count
-    journalStorage.incrementRecall(randomEntry.id);
-    
-    // Update local state
-    setEntries(prev => prev.map(entry => 
-      entry.id === randomEntry.id 
-        ? { ...entry, recallCount: (entry.recallCount || 0) + 1 }
-        : entry
-    ));
+    // For now, just show the random entry
+    // TODO: Add recall tracking to database
+    console.log('Random memory selected:', randomEntry);
   };
 
-  const handleToggleFavorite = (entryId: string) => {
-    journalStorage.toggleFavorite(entryId);
-    setEntries(prev => prev.map(entry => 
-      entry.id === entryId 
-        ? { ...entry, isFavorite: !entry.isFavorite }
-        : entry
-    ));
+  const handleToggleFavorite = async (entryId: string) => {
+    // TODO: Add favorite functionality to database
+    console.log('Toggle favorite for entry:', entryId);
   };
 
-  const formatDate = (timestamp: number) => {
+  const formatDate = (timestamp: string) => {
     return new Date(timestamp).toLocaleDateString('en-US', {
       year: 'numeric',
       month: 'long',
@@ -180,17 +176,15 @@ const TakeMeBack = () => {
           <p className="text-sm text-muted-foreground">Total Memories</p>
         </div>
         <div className="glass-card p-4 text-center">
-          <p className="text-2xl font-bold text-secondary">{entries.filter(e => e.isFavorite).length}</p>
+          <p className="text-2xl font-bold text-secondary">0</p>
           <p className="text-sm text-muted-foreground">Favorites</p>
         </div>
         <div className="glass-card p-4 text-center">
-          <p className="text-2xl font-bold text-accent">{entries.filter(e => e.memoryGenerated).length}</p>
+          <p className="text-2xl font-bold text-accent">{entries.filter(e => e.generated_memory).length}</p>
           <p className="text-sm text-muted-foreground">AI Stories</p>
         </div>
         <div className="glass-card p-4 text-center">
-          <p className="text-2xl font-bold text-primary">
-            {entries.reduce((sum, e) => sum + (e.recallCount || 0), 0)}
-          </p>
+          <p className="text-2xl font-bold text-primary">0</p>
           <p className="text-sm text-muted-foreground">Total Recalls</p>
         </div>
       </div>
