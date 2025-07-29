@@ -119,9 +119,52 @@ serve(async (req) => {
   }
 
   try {
-    // Get user ID from request (you can modify this based on your auth setup)
+    // Validate JWT token
     const authHeader = req.headers.get("Authorization")
-    const userId = authHeader ? authHeader.replace("Bearer ", "") : "anonymous"
+    if (!authHeader || !authHeader.startsWith("Bearer ")) {
+      return new Response(JSON.stringify({ 
+        error: "Missing or invalid authorization header",
+        success: false 
+      }), {
+        status: 401,
+        headers: {
+          "Content-Type": "application/json",
+          "Access-Control-Allow-Origin": "*",
+        },
+      })
+    }
+
+    const token = authHeader.replace("Bearer ", "")
+    
+    // Verify JWT with Supabase
+    const supabaseUrl = Deno.env.get("SUPABASE_URL")
+    const supabaseAnonKey = Deno.env.get("SUPABASE_ANON_KEY")
+    
+    if (!supabaseUrl || !supabaseAnonKey) {
+      throw new Error("Supabase configuration missing")
+    }
+
+    const { data: { user }, error } = await fetch(`${supabaseUrl}/auth/v1/user`, {
+      headers: {
+        "Authorization": `Bearer ${token}`,
+        "apikey": supabaseAnonKey,
+      },
+    }).then(res => res.json())
+
+    if (error || !user) {
+      return new Response(JSON.stringify({ 
+        error: "Invalid or expired token",
+        success: false 
+      }), {
+        status: 401,
+        headers: {
+          "Content-Type": "application/json",
+          "Access-Control-Allow-Origin": "*",
+        },
+      })
+    }
+
+    const userId = user.id
     
     // Check rate limit
     if (!checkRateLimit(userId)) {

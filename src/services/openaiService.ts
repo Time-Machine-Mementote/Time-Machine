@@ -25,11 +25,15 @@ export class OpenAIService {
     try {
       const { data: { session } } = await supabase.auth.getSession()
       
+      if (!session?.access_token) {
+        throw new Error('No active session. Please sign in again.');
+      }
+      
       const response = await fetch(`${this.supabaseUrl}/functions/v1/generate-story`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'Authorization': session?.access_token ? `Bearer ${session.access_token}` : '',
+          'Authorization': `Bearer ${session.access_token}`,
         },
         body: JSON.stringify({
           journalEntry,
@@ -58,6 +62,9 @@ export class OpenAIService {
       };
     } catch (error) {
       console.error('Error generating story:', error);
+      if (error instanceof Error) {
+        throw new Error(`Failed to generate story: ${error.message}`);
+      }
       throw new Error('Failed to generate story. Please try again.');
     }
   }

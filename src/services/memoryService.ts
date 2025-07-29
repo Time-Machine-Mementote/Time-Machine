@@ -36,7 +36,7 @@ export class MemoryService {
       const storyResult = await this.openaiService.generateStory({
         title: entry.title,
         content: entry.content,
-        type: entry.type,
+        type: entry.entry_type,
         mediaDescriptions: this.extractMediaDescriptions(entry)
       });
 
