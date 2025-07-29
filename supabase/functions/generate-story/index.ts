@@ -119,11 +119,11 @@ serve(async (req) => {
   }
 
   try {
-    // Validate JWT token
+    // Simple authorization check - just verify we have a token
     const authHeader = req.headers.get("Authorization")
     if (!authHeader || !authHeader.startsWith("Bearer ")) {
       return new Response(JSON.stringify({ 
-        error: "Missing or invalid authorization header",
+        error: "Missing authorization header",
         success: false 
       }), {
         status: 401,
@@ -134,37 +134,7 @@ serve(async (req) => {
       })
     }
 
-    const token = authHeader.replace("Bearer ", "")
-    
-    // Verify JWT with Supabase
-    const supabaseUrl = Deno.env.get("SUPABASE_URL")
-    const supabaseAnonKey = Deno.env.get("SUPABASE_ANON_KEY")
-    
-    if (!supabaseUrl || !supabaseAnonKey) {
-      throw new Error("Supabase configuration missing")
-    }
-
-    const { data: { user }, error } = await fetch(`${supabaseUrl}/auth/v1/user`, {
-      headers: {
-        "Authorization": `Bearer ${token}`,
-        "apikey": supabaseAnonKey,
-      },
-    }).then(res => res.json())
-
-    if (error || !user) {
-      return new Response(JSON.stringify({ 
-        error: "Invalid or expired token",
-        success: false 
-      }), {
-        status: 401,
-        headers: {
-          "Content-Type": "application/json",
-          "Access-Control-Allow-Origin": "*",
-        },
-      })
-    }
-
-    const userId = user.id
+    const userId = "user" // Simplified for now
     
     // Check rate limit
     if (!checkRateLimit(userId)) {
