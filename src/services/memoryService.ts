@@ -1,7 +1,11 @@
 import { OpenAIService } from './openaiService';
 import { RunwareService } from './runwareService';
-import { journalStorage, type JournalEntry, type GeneratedMemory } from '@/utils/journalStorage';
+import { databaseService } from './databaseService';
 import { toast } from 'sonner';
+import type { Database } from '../integrations/supabase/types';
+
+type JournalEntry = Database['public']['Tables']['journal_entries']['Row']
+type GeneratedMemory = Database['public']['Tables']['generated_memories']['Row']
 
 interface GenerateMemoryParams {
   entryId: string;
@@ -19,7 +23,7 @@ export class MemoryService {
 
   async generateMemory(params: GenerateMemoryParams): Promise<GeneratedMemory | null> {
 
-    const entry = journalStorage.getEntry(params.entryId);
+    const entry = await databaseService.getJournalEntry(params.entryId);
     if (!entry) {
       toast.error('Journal entry not found');
       return null;
@@ -52,20 +56,19 @@ export class MemoryService {
         }
       }
 
-      const memory: GeneratedMemory = {
-        id: crypto.randomUUID(),
-        entryId: params.entryId,
+      // Save memory to database
+      const memory = await databaseService.upsertGeneratedMemory(params.entryId, {
         story: storyResult.story,
-        audioUrl: storyResult.audioUrl,
-        imageUrl,
-        createdAt: new Date().toISOString()
-      };
-
-      // Save memory to entry
-      journalStorage.updateEntry(params.entryId, {
-        generatedMemory: memory,
-        memoryGenerated: true
+        audio_url: storyResult.audioUrl,
+        image_url: imageUrl,
+        status: 'generated',
+        generation_prompt: this.createImagePrompt(entry)
       });
+
+      if (!memory) {
+        toast.error('Failed to save memory to database');
+        return null;
+      }
 
       toast.success('Memory generated successfully!', { id: 'memory-generation' });
       return memory;
@@ -80,11 +83,12 @@ export class MemoryService {
   private extractMediaDescriptions(entry: JournalEntry): string[] {
     const descriptions: string[] = [];
     
-    if (entry.mediaFiles) {
-      entry.mediaFiles.forEach(file => {
-        if (file.type.startsWith('image/')) {
+    if (entry.media_files) {
+      const mediaFiles = entry.media_files as any[];
+      mediaFiles.forEach(file => {
+        if (file.type?.startsWith('image/')) {
           descriptions.push(`image: ${file.name}`);
-        } else if (file.type.startsWith('video/')) {
+        } else if (file.type?.startsWith('video/')) {
           descriptions.push(`video: ${file.name}`);
         }
       });

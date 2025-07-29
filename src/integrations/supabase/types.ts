@@ -7,14 +7,116 @@ export type Json =
   | Json[]
 
 export type Database = {
-  // Allows to automatically instanciate createClient with right options
-  // instead of createClient<Database, { PostgrestVersion: 'XX' }>(URL, KEY)
   __InternalSupabase: {
     PostgrestVersion: "12.2.12 (cd3cf9e)"
   }
   public: {
     Tables: {
-      [_ in never]: never
+      profiles: {
+        Row: {
+          id: string
+          email: string | null
+          full_name: string | null
+          avatar_url: string | null
+          created_at: string
+          updated_at: string
+        }
+        Insert: {
+          id: string
+          email?: string | null
+          full_name?: string | null
+          avatar_url?: string | null
+          created_at?: string
+          updated_at?: string
+        }
+        Update: {
+          id?: string
+          email?: string | null
+          full_name?: string | null
+          avatar_url?: string | null
+          created_at?: string
+          updated_at?: string
+        }
+      }
+      journal_entries: {
+        Row: {
+          id: string
+          user_id: string
+          title: string
+          content: string
+          entry_type: 'text' | 'voice' | 'media'
+          mood: string | null
+          tags: string[] | null
+          media_files: any | null
+          created_at: string
+          updated_at: string
+        }
+        Insert: {
+          id?: string
+          user_id: string
+          title: string
+          content: string
+          entry_type?: 'text' | 'voice' | 'media'
+          mood?: string | null
+          tags?: string[] | null
+          media_files?: any | null
+          created_at?: string
+          updated_at?: string
+        }
+        Update: {
+          id?: string
+          user_id?: string
+          title?: string
+          content?: string
+          entry_type?: 'text' | 'voice' | 'media'
+          mood?: string | null
+          tags?: string[] | null
+          media_files?: any | null
+          created_at?: string
+          updated_at?: string
+        }
+      }
+      generated_memories: {
+        Row: {
+          id: string
+          entry_id: string
+          user_id: string
+          story: string | null
+          audio_url: string | null
+          video_url: string | null
+          image_url: string | null
+          status: 'pending' | 'generated' | 'failed'
+          generation_prompt: string | null
+          created_at: string
+          updated_at: string
+        }
+        Insert: {
+          id?: string
+          entry_id: string
+          user_id: string
+          story?: string | null
+          audio_url?: string | null
+          video_url?: string | null
+          image_url?: string | null
+          status?: 'pending' | 'generated' | 'failed'
+          generation_prompt?: string | null
+          created_at?: string
+          updated_at?: string
+        }
+        Update: {
+          id?: string
+          entry_id?: string
+          user_id?: string
+          story?: string | null
+          audio_url?: string | null
+          video_url?: string | null
+          image_url?: string | null
+          status?: 'pending' | 'generated' | 'failed'
+          generation_prompt?: string | null
+          created_at?: string
+          updated_at?: string
+        }
+      }
     }
     Views: {
       [_ in never]: never
@@ -23,7 +125,8 @@ export type Database = {
       [_ in never]: never
     }
     Enums: {
-      [_ in never]: never
+      entry_type: 'text' | 'voice' | 'media'
+      memory_status: 'pending' | 'generated' | 'failed'
     }
     CompositeTypes: {
       [_ in never]: never
