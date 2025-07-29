@@ -1,6 +1,4 @@
-interface OpenAIServiceConfig {
-  apiKey: string;
-}
+import { supabase } from '../integrations/supabase/client'
 
 interface GenerateStoryParams {
   title: string;
@@ -15,82 +13,62 @@ interface GeneratedStory {
 }
 
 export class OpenAIService {
-  private apiKey: string;
-  private baseUrl = 'https://api.openai.com/v1';
+  private supabaseUrl: string;
 
-  constructor(config: OpenAIServiceConfig) {
-    this.apiKey = config.apiKey;
+  constructor() {
+    this.supabaseUrl = import.meta.env.VITE_SUPABASE_URL || '';
   }
 
   async generateStory(params: GenerateStoryParams): Promise<GeneratedStory> {
-    const prompt = this.createStoryPrompt(params);
+    const journalEntry = this.createStoryPrompt(params);
     
     try {
-      const response = await fetch(`${this.baseUrl}/chat/completions`, {
+      const { data: { session } } = await supabase.auth.getSession()
+      
+      const response = await fetch(`${this.supabaseUrl}/functions/v1/generate-story`, {
         method: 'POST',
         headers: {
-          'Authorization': `Bearer ${this.apiKey}`,
           'Content-Type': 'application/json',
+          'Authorization': session?.access_token ? `Bearer ${session.access_token}` : '',
         },
         body: JSON.stringify({
-          model: 'gpt-4.1-2025-04-14',
-          messages: [
-            {
-              role: 'system',
-              content: 'You are a creative storyteller who transforms personal journal entries into beautiful, nostalgic narratives. Write in second person ("you") to create an immersive memory experience. Keep stories between 100-200 words, emotionally resonant, and capture the essence of the moment.'
-            },
-            {
-              role: 'user',
-              content: prompt
-            }
-          ],
-          temperature: 0.8,
-          max_tokens: 300
+          journalEntry,
+          model: 'gpt-4',
+          maxTokens: 300,
+          temperature: 0.8
         }),
       });
 
+      const result = await response.json();
+      
       if (!response.ok) {
-        throw new Error(`OpenAI API error: ${response.status}`);
+        throw new Error(result.error || 'Failed to generate story');
       }
 
-      const data = await response.json();
-      const story = data.choices[0]?.message?.content || '';
+      if (!result.success || !result.story) {
+        throw new Error('No story generated');
+      }
 
-      // Generate audio for the story
-      const audioUrl = await this.generateAudio(story);
+      // Generate audio for the story (you can add a separate Edge Function for this)
+      const audioUrl = await this.generateAudio(result.story);
 
       return {
-        story,
+        story: result.story,
         audioUrl
       };
     } catch (error) {
       console.error('Error generating story:', error);
-      throw new Error('Failed to generate story. Please check your API key and try again.');
+      throw new Error('Failed to generate story. Please try again.');
     }
   }
 
   private async generateAudio(text: string): Promise<string> {
+    // For now, return empty string. You can create a separate Edge Function for TTS
+    // or use a client-side TTS solution
     try {
-      const response = await fetch(`${this.baseUrl}/audio/speech`, {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${this.apiKey}`,
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          model: 'tts-1',
-          input: text,
-          voice: 'nova',
-          response_format: 'mp3'
-        }),
-      });
-
-      if (!response.ok) {
-        throw new Error(`OpenAI TTS error: ${response.status}`);
-      }
-
-      const audioBlob = await response.blob();
-      return URL.createObjectURL(audioBlob);
+      // This would be a separate Edge Function call
+      // const response = await fetch(`${this.supabaseUrl}/functions/v1/generate-audio`, ...)
+      return '';
     } catch (error) {
       console.error('Error generating audio:', error);
       return '';
@@ -112,17 +90,8 @@ export class OpenAIService {
     return prompt;
   }
 
-  static getApiKeys(): { openaiKey: string; runwareKey: string } | null {
-    try {
-      const keys = localStorage.getItem('timemashin_api_keys');
-      return keys ? JSON.parse(keys) : null;
-    } catch {
-      return null;
-    }
-  }
-
   static hasValidApiKey(): boolean {
-    const keys = this.getApiKeys();
-    return !!(keys?.openaiKey);
+    // Always return true since we're using Edge Functions
+    return true;
   }
 }

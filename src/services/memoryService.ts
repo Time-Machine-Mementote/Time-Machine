@@ -9,30 +9,15 @@ interface GenerateMemoryParams {
 }
 
 export class MemoryService {
-  private openaiService: OpenAIService | null = null;
-  private runwareService: RunwareService | null = null;
+  private openaiService: OpenAIService;
+  private runwareService: RunwareService;
 
   constructor() {
-    this.initializeServices();
-  }
-
-  private initializeServices() {
-    const apiKeys = OpenAIService.getApiKeys();
-    
-    if (apiKeys?.openaiKey) {
-      this.openaiService = new OpenAIService({ apiKey: apiKeys.openaiKey });
-    }
-    
-    if (apiKeys?.runwareKey) {
-      this.runwareService = new RunwareService({ apiKey: apiKeys.runwareKey });
-    }
+    this.openaiService = new OpenAIService();
+    this.runwareService = new RunwareService();
   }
 
   async generateMemory(params: GenerateMemoryParams): Promise<GeneratedMemory | null> {
-    if (!this.openaiService) {
-      toast.error('OpenAI API key not configured. Please check your settings.');
-      return null;
-    }
 
     const entry = journalStorage.getEntry(params.entryId);
     if (!entry) {
@@ -51,9 +36,9 @@ export class MemoryService {
         mediaDescriptions: this.extractMediaDescriptions(entry)
       });
 
-      // Generate image if requested and service is available
+      // Generate image if requested
       let imageUrl: string | undefined;
-      if (params.generateImage && this.runwareService) {
+      if (params.generateImage) {
         try {
           const imagePrompt = this.createImagePrompt(entry);
           const imageResult = await this.runwareService.generateImage({
@@ -120,10 +105,10 @@ export class MemoryService {
   }
 
   hasValidConfiguration(): boolean {
-    return OpenAIService.hasValidApiKey();
+    return true; // Always true since we're using Edge Functions
   }
 
   canGenerateImages(): boolean {
-    return RunwareService.hasValidApiKey();
+    return true; // Always true since we're using Edge Functions
   }
 }
