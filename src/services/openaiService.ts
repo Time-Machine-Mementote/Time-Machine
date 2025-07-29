@@ -29,6 +29,8 @@ export class OpenAIService {
         throw new Error('No active session. Please sign in again.');
       }
       
+      console.log('Making request to Edge Function with token:', session.access_token.substring(0, 20) + '...')
+      
       const response = await fetch(`${this.supabaseUrl}/functions/v1/generate-story`, {
         method: 'POST',
         headers: {
@@ -43,10 +45,12 @@ export class OpenAIService {
         }),
       });
 
+      console.log('Response status:', response.status)
       const result = await response.json();
+      console.log('Response result:', result)
       
       if (!response.ok) {
-        throw new Error(result.error || 'Failed to generate story');
+        throw new Error(result.error || result.message || 'Failed to generate story');
       }
 
       if (!result.success || !result.story) {

@@ -119,6 +119,22 @@ serve(async (req) => {
   }
 
   try {
+    // Check if OpenAI API key is available
+    const openaiApiKey = Deno.env.get("OPENAI_API_KEY")
+    if (!openaiApiKey) {
+      console.error("OpenAI API key not found in environment")
+      return new Response(JSON.stringify({ 
+        error: "OpenAI API key not configured",
+        success: false 
+      }), {
+        status: 500,
+        headers: {
+          "Content-Type": "application/json",
+          "Access-Control-Allow-Origin": "*",
+        },
+      })
+    }
+
     // Simple authorization check - just verify we have a token
     const authHeader = req.headers.get("Authorization")
     if (!authHeader || !authHeader.startsWith("Bearer ")) {
