@@ -62,8 +62,11 @@ export class RunwareService {
         prompt: enhancedPrompt
       };
     } catch (error) {
-      console.error('Error generating image:', error);
-      throw new Error('Failed to generate image. Please try again.');
+      console.error('Error generating video:', error);
+      if (error instanceof Error) {
+        throw new Error(`Failed to generate video: ${error.message}`);
+      }
+      throw new Error('Failed to generate video. Please try again.');
     }
   }
 

@@ -63,7 +63,8 @@ async function generateVideoWithRunway(request: ImageRequest): Promise<{ id: str
     fps: request.fps,
     guidance_scale: request.guidanceScale,
     seed: request.seed,
-    model: "gen-2", // Add model specification
+    model: "gen-2",
+    aspect_ratio: "1:1",
   }
 
   console.log("Making request to Runway API...")
