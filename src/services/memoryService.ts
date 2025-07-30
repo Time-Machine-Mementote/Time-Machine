@@ -67,8 +67,8 @@ export class MemoryService {
       // Save memory to database
       const memory = await databaseService.upsertGeneratedMemory(params.entryId, {
         story: storyResult.story,
-        audio_url: storyResult.audioUrl,
-        image_url: imageUrl,
+        audio_url: audioUrl,
+        video_url: imageUrl, // This is actually a video URL from Runway
         status: 'generated',
         generation_prompt: this.createImagePrompt(entry)
       });
