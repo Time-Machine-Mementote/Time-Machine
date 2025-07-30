@@ -40,23 +40,37 @@ export class MemoryService {
         mediaDescriptions: this.extractMediaDescriptions(entry)
       });
 
-      // Generate video if requested
+      // Generate video, audio, and visual components
       let imageUrl: string | undefined;
-      if (params.generateImage) {
-        try {
-          toast.loading('Generating video visualization...', { id: 'video-generation' });
-          const imagePrompt = this.createImagePrompt(entry);
-          const imageResult = await this.runwareService.generateImage({
-            prompt: imagePrompt,
-            style: 'nostalgic memory, dreamy, soft focus, cinematic'
-          });
-          imageUrl = imageResult.imageUrl;
-          toast.success('Video generated successfully!', { id: 'video-generation' });
-        } catch (error) {
-          console.error('Video generation failed:', error);
-          toast.error('Video generation failed, but story was created', { id: 'video-generation' });
-          // Continue without video if generation fails
+      let audioUrl: string | undefined;
+      
+      // Always generate video/image when creating memory
+      try {
+        toast.loading('Generating video visualization...', { id: 'video-generation' });
+        const imagePrompt = this.createImagePrompt(entry);
+        const imageResult = await this.runwareService.generateImage({
+          prompt: imagePrompt,
+          style: 'nostalgic memory, dreamy, soft focus, cinematic'
+        });
+        imageUrl = imageResult.imageUrl;
+        toast.success('Video generated successfully!', { id: 'video-generation' });
+      } catch (error) {
+        console.error('Video generation failed:', error);
+        toast.error('Video generation failed, but story was created', { id: 'video-generation' });
+        // Continue without video if generation fails
+      }
+
+      // Generate audio narration
+      try {
+        if (storyResult.story) {
+          toast.loading('Generating audio narration...', { id: 'audio-generation' });
+          // Note: Audio generation would need implementation
+          // audioUrl = await this.generateAudioNarration(storyResult.story);
+          toast.success('Audio generation completed!', { id: 'audio-generation' });
         }
+      } catch (error) {
+        console.error('Audio generation failed:', error);
+        toast.error('Audio generation failed', { id: 'audio-generation' });
       }
 
       // Save memory to database

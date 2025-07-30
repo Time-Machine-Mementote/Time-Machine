@@ -55,24 +55,19 @@ async function generateVideoWithRunway(request: ImageRequest): Promise<{ id: str
   console.log("Request payload:", JSON.stringify(request, null, 2))
 
   const payload = {
-    prompt: request.prompt,
-    negative_prompt: request.negativePrompt || "",
-    width: request.width,
-    height: request.height,
-    num_frames: request.numFrames,
-    fps: request.fps,
-    guidance_scale: request.guidanceScale,
+    promptText: request.prompt,
+    model: "gen3a_turbo",
+    ratio: "960:960",
     seed: request.seed,
-    model: "gen-2",
-    aspect_ratio: "1:1",
   }
 
   console.log("Making request to Runway API...")
-  const response = await fetch("https://api.runwayml.com/v1/inference/gen-2", {
+  const response = await fetch("https://api.dev.runwayml.com/v1/text_to_video", {
     method: "POST",
     headers: {
       "Authorization": `Bearer ${runwayApiKey}`,
       "Content-Type": "application/json",
+      "X-Runway-Version": "2024-11-06",
     },
     body: JSON.stringify(payload),
   })
@@ -102,11 +97,11 @@ async function checkVideoStatus(videoId: string): Promise<{ status: string; vide
     throw new Error("Runway API key not configured")
   }
 
-  const response = await fetch(`https://api.runwayml.com/v1/inference/${videoId}`, {
+  const response = await fetch(`https://api.dev.runwayml.com/v1/tasks/${videoId}`, {
     method: "GET",
     headers: {
       "Authorization": `Bearer ${runwayApiKey}`,
-      "Content-Type": "application/json",
+      "X-Runway-Version": "2024-11-06",
     },
   })
 

@@ -17,8 +17,11 @@ export interface MediaFile {
   id: string;
   name: string;
   type: string;
+  size: number;
   data: string; // Base64 encoded
   preview?: string;
+  url?: string;
+  file?: File;
 }
 
 export interface GeneratedMemory {

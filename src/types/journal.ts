@@ -5,6 +5,8 @@ export interface MediaFile {
   size: number;
   url?: string;
   file?: File;
+  data: string; // Base64 encoded - required for compatibility
+  preview?: string;
 }
 
 export interface JournalEntryFormData {

@@ -28,6 +28,7 @@ const MediaUpload = ({ onFilesChange, existingFiles = [], maxFiles = 5 }: MediaU
           id: crypto.randomUUID(),
           name: file.name,
           type: file.type,
+          size: file.size,
           data: result,
         };
 
