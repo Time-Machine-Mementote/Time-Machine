@@ -58,35 +58,30 @@ export class MemoryService {
 
       toast.loading('Creating dreamy visual representation...', { id: 'image-generation' });
 
-      // Step 3: Generate image based on story content using Runway
-      let imageUrl: string | undefined;
+      // Step 3: Generate video directly from story using Runway (skip image step for now)
       let videoUrl: string | undefined;
       
       try {
-        const imagePrompt = this.createDreamyImagePrompt(storyResult.story, entry);
-        const imageResult = await this.runwareService.generateImage({
-          prompt: imagePrompt,
+        const videoPrompt = this.createDreamyImagePrompt(storyResult.story, entry);
+        console.log('Generating video with prompt:', videoPrompt);
+        
+        const videoResult = await this.runwareService.generateImage({
+          prompt: videoPrompt,
           style: 'dreamy, ethereal, nostalgic, soft lighting, memory-like quality, cinematic'
         });
-        imageUrl = imageResult.imageUrl;
-        toast.success('Dreamy image created!', { id: 'image-generation' });
-
-        // Step 4: Generate video from the image using Runway
-        toast.loading('Transforming image into living memory...', { id: 'video-generation' });
-        videoUrl = await this.generateVideoFromImage(imageUrl, storyResult.story);
-        toast.success('Living memory video created!', { id: 'video-generation' });
+        videoUrl = videoResult.imageUrl; // This is actually a video URL from Runway
+        toast.success('Living memory video created!', { id: 'image-generation' });
         
       } catch (error) {
-        console.error('Visual generation failed:', error);
-        toast.error('Visual generation failed, but story and audio were created', { id: 'video-generation' });
+        console.error('Video generation failed:', error);
+        toast.error('Video generation failed, but story and audio were created', { id: 'image-generation' });
       }
 
-      // Step 5: Save integrated memory to database
+      // Step 4: Save integrated memory to database
       const memory = await databaseService.upsertGeneratedMemory(params.entryId, {
         story: storyResult.story,
         audio_url: audioUrl,
-        image_url: imageUrl,
-        video_url: videoUrl,
+        video_url: videoUrl, // Direct video from text-to-video
         status: 'generated',
         generation_prompt: this.createDreamyImagePrompt(storyResult.story, entry)
       });
@@ -107,8 +102,10 @@ export class MemoryService {
   }
 
   private async generateAudioNarration(story: string): Promise<string> {
+    console.log('Starting audio generation...');
+    
     // Call OpenAI TTS API through edge function
-    const response = await fetch(`${this.getSupabaseUrl()}/functions/v1/generate-audio`, {
+    const response = await fetch(`${await this.getSupabaseUrl()}/functions/v1/generate-audio`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -120,12 +117,16 @@ export class MemoryService {
       }),
     });
 
+    console.log('Audio generation response status:', response.status);
+
     if (!response.ok) {
       const error = await response.json();
+      console.error('Audio generation error:', error);
       throw new Error(error.error || 'Failed to generate audio narration');
     }
 
     const result = await response.json();
+    console.log('Audio generation result:', result);
     return result.audioUrl;
   }
 
