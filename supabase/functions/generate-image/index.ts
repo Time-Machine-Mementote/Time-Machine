@@ -51,6 +51,9 @@ async function generateVideoWithRunway(request: ImageRequest): Promise<{ id: str
     throw new Error("Runway API key not configured")
   }
 
+  console.log("Runway API key found, making request...")
+  console.log("Request payload:", JSON.stringify(request, null, 2))
+
   const payload = {
     prompt: request.prompt,
     negative_prompt: request.negativePrompt || "",
@@ -60,9 +63,11 @@ async function generateVideoWithRunway(request: ImageRequest): Promise<{ id: str
     fps: request.fps,
     guidance_scale: request.guidanceScale,
     seed: request.seed,
+    model: "gen-2", // Add model specification
   }
 
-  const response = await fetch("https://api.runwayml.com/v1/inference", {
+  console.log("Making request to Runway API...")
+  const response = await fetch("https://api.runwayml.com/v1/inference/gen-2", {
     method: "POST",
     headers: {
       "Authorization": `Bearer ${runwayApiKey}`,
@@ -71,12 +76,16 @@ async function generateVideoWithRunway(request: ImageRequest): Promise<{ id: str
     body: JSON.stringify(payload),
   })
 
+  console.log("Runway API response status:", response.status)
+  
   if (!response.ok) {
     const errorData = await response.text()
+    console.error("Runway API error:", errorData)
     throw new Error(`Runway API error: ${response.status} - ${errorData}`)
   }
 
   const data: RunwayResponse = await response.json()
+  console.log("Runway API response data:", data)
   
   if (data.error) {
     throw new Error(`Runway generation error: ${data.error}`)
@@ -138,9 +147,38 @@ serve(async (req) => {
   }
 
   try {
-    // Get user ID from request (you can modify this based on your auth setup)
+    // Check if Runway API key is available
+    const runwayApiKey = Deno.env.get("RUNWAY_API_KEY")
+    if (!runwayApiKey) {
+      console.error("Runway API key not found in environment")
+      return new Response(JSON.stringify({ 
+        error: "Runway API key not configured",
+        success: false 
+      }), {
+        status: 500,
+        headers: {
+          "Content-Type": "application/json",
+          "Access-Control-Allow-Origin": "*",
+        },
+      })
+    }
+
+    // Simple authorization check - just verify we have a token
     const authHeader = req.headers.get("Authorization")
-    const userId = authHeader ? authHeader.replace("Bearer ", "") : "anonymous"
+    if (!authHeader || !authHeader.startsWith("Bearer ")) {
+      return new Response(JSON.stringify({ 
+        error: "Missing authorization header",
+        success: false 
+      }), {
+        status: 401,
+        headers: {
+          "Content-Type": "application/json",
+          "Access-Control-Allow-Origin": "*",
+        },
+      })
+    }
+
+    const userId = "test-user" // Simplified for now
     
     // Check rate limit
     if (!checkRateLimit(userId)) {
