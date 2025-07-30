@@ -224,11 +224,24 @@ const MemoryCard = ({ entry, onToggleFavorite }: MemoryCardProps) => {
                 {truncateText(entry.generated_memory.story || '', 200)}
               </p>
               {entry.generated_memory.image_url && (
-                <img 
-                  src={entry.generated_memory.image_url} 
-                  alt="Generated memory visualization"
-                  className="w-full h-32 object-cover rounded-lg border"
-                />
+                <div className="w-full">
+                  {entry.generated_memory.image_url.includes('.mp4') || entry.generated_memory.image_url.includes('video') ? (
+                    <video 
+                      src={entry.generated_memory.image_url} 
+                      controls
+                      className="w-full h-32 object-cover rounded-lg border"
+                      poster="/placeholder.svg"
+                    >
+                      Your browser does not support the video tag.
+                    </video>
+                  ) : (
+                    <img 
+                      src={entry.generated_memory.image_url} 
+                      alt="Generated memory visualization"
+                      className="w-full h-32 object-cover rounded-lg border"
+                    />
+                  )}
+                </div>
               )}
             </div>
           )}

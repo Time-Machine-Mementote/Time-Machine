@@ -23,6 +23,8 @@ export class RunwareService {
     try {
       const { data: { session } } = await supabase.auth.getSession()
       
+      console.log('Starting video generation with prompt:', enhancedPrompt)
+      
       const response = await fetch(`${this.supabaseUrl}/functions/v1/generate-image`, {
         method: 'POST',
         headers: {
@@ -41,15 +43,17 @@ export class RunwareService {
       });
 
       const result = await response.json();
+      console.log('Video generation response:', result)
       
       if (!response.ok) {
-        throw new Error(result.error || 'Failed to generate image');
+        throw new Error(result.error || 'Failed to generate video');
       }
 
       if (!result.success || !result.videoId) {
         throw new Error('No video generated');
       }
 
+      console.log('Video generation started, polling for completion...')
       // Poll for completion
       const videoUrl = await this.pollVideoStatus(result.videoId);
 
@@ -67,6 +71,8 @@ export class RunwareService {
     const maxAttempts = 30;
     const intervalMs = 5000;
 
+    console.log(`Starting to poll video status for ID: ${videoId}`)
+
     for (let attempt = 0; attempt < maxAttempts; attempt++) {
       const { data: { session } } = await supabase.auth.getSession()
       
@@ -78,12 +84,14 @@ export class RunwareService {
       });
 
       const result = await response.json();
+      console.log(`Poll attempt ${attempt + 1}:`, result)
       
       if (!response.ok) {
         throw new Error(result.error || 'Failed to check video status');
       }
 
       if (result.status === 'completed' && result.videoUrl) {
+        console.log('Video generation completed! URL:', result.videoUrl)
         return result.videoUrl;
       }
 

@@ -40,19 +40,22 @@ export class MemoryService {
         mediaDescriptions: this.extractMediaDescriptions(entry)
       });
 
-      // Generate image if requested
+      // Generate video if requested
       let imageUrl: string | undefined;
       if (params.generateImage) {
         try {
+          toast.loading('Generating video visualization...', { id: 'video-generation' });
           const imagePrompt = this.createImagePrompt(entry);
           const imageResult = await this.runwareService.generateImage({
             prompt: imagePrompt,
-            style: 'nostalgic memory, dreamy, soft focus'
+            style: 'nostalgic memory, dreamy, soft focus, cinematic'
           });
           imageUrl = imageResult.imageUrl;
+          toast.success('Video generated successfully!', { id: 'video-generation' });
         } catch (error) {
-          console.error('Image generation failed:', error);
-          // Continue without image if generation fails
+          console.error('Video generation failed:', error);
+          toast.error('Video generation failed, but story was created', { id: 'video-generation' });
+          // Continue without video if generation fails
         }
       }
 
