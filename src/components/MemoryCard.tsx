@@ -173,21 +173,19 @@ const MemoryCard = ({ entry, onToggleFavorite }: MemoryCardProps) => {
               {isExpanded ? 'Hide' : 'View'} Memory
             </Button>
 
-            {/* TODO: Add audio playback when implemented */}
-
+            {/* Memory Generation / Playback Button */}
             {entry.generated_memory ? (
               <Button
                 variant="outline"
                 size="sm"
-                className="text-xs"
+                className="text-xs bg-primary/10 text-primary border-primary/20"
                 onClick={() => {
-                  if (entry.generated_memory?.audio_url) {
-                    const audio = new Audio(entry.generated_memory.audio_url);
-                    audio.play();
-                  }
+                  // Play the integrated memory experience
+                  console.log('Playing integrated memory:', entry.generated_memory);
                 }}
               >
-                ✨ Story
+                <Play className="w-3 h-3 mr-1" />
+                Experience Memory
               </Button>
             ) : (
               <Button
@@ -201,6 +199,10 @@ const MemoryCard = ({ entry, onToggleFavorite }: MemoryCardProps) => {
                       entryId: entry.id,
                       generateImage: true
                     });
+                    // Refresh the page or update the entry to show the new memory
+                    window.location.reload();
+                  } catch (error) {
+                    console.error('Failed to generate memory:', error);
                   } finally {
                     setIsGeneratingMemory(false);
                   }
@@ -208,41 +210,78 @@ const MemoryCard = ({ entry, onToggleFavorite }: MemoryCardProps) => {
                 disabled={isGeneratingMemory}
               >
                 <Sparkles className="w-3 h-3 mr-1" />
-                {isGeneratingMemory ? 'Generating...' : 'Generate'}
+                {isGeneratingMemory ? 'Creating...' : 'Create Memory'}
               </Button>
             )}
           </div>
 
-          {/* Memory Story Preview */}
+          {/* Integrated Memory Experience */}
           {isExpanded && entry.generated_memory && (
-            <div className="mt-4 p-4 bg-primary/5 rounded-lg border border-primary/20">
-              <h4 className="font-crimson font-semibold text-primary mb-2 flex items-center gap-2">
+            <div className="mt-4 p-4 bg-gradient-to-br from-primary/5 to-secondary/5 rounded-lg border border-primary/20">
+              <h4 className="font-crimson font-semibold text-primary mb-3 flex items-center gap-2">
                 <Sparkles className="w-4 h-4" />
-                AI Generated Story
+                Your Memory Experience
               </h4>
-              <p className="text-sm text-muted-foreground mb-3">
-                {truncateText(entry.generated_memory.story || '', 200)}
-              </p>
-              {entry.generated_memory.image_url && (
-                <div className="w-full">
-                  {entry.generated_memory.image_url.includes('.mp4') || entry.generated_memory.image_url.includes('video') ? (
-                    <video 
-                      src={entry.generated_memory.image_url} 
-                      controls
-                      className="w-full h-32 object-cover rounded-lg border"
-                      poster="/placeholder.svg"
-                    >
-                      Your browser does not support the video tag.
-                    </video>
-                  ) : (
-                    <img 
-                      src={entry.generated_memory.image_url} 
-                      alt="Generated memory visualization"
-                      className="w-full h-32 object-cover rounded-lg border"
-                    />
-                  )}
+              
+              {/* Story Text */}
+              <div className="mb-4">
+                <h5 className="text-sm font-medium text-foreground mb-2">Story</h5>
+                <p className="text-sm text-muted-foreground leading-relaxed">
+                  {entry.generated_memory.story || 'Story generation in progress...'}
+                </p>
+              </div>
+
+              {/* Audio Player */}
+              {entry.generated_memory.audio_url && (
+                <div className="mb-4">
+                  <h5 className="text-sm font-medium text-foreground mb-2">Audio Narration</h5>
+                  <audio 
+                    controls 
+                    className="w-full h-10"
+                    preload="metadata"
+                  >
+                    <source src={entry.generated_memory.audio_url} type="audio/mpeg" />
+                    <source src={entry.generated_memory.audio_url} type="audio/mp3" />
+                    Your browser does not support the audio element.
+                  </audio>
                 </div>
               )}
+
+              {/* Video/Image Display */}
+              <div className="mb-4">
+                <h5 className="text-sm font-medium text-foreground mb-2">Visual Memory</h5>
+                
+                {/* Prioritize video over image */}
+                {entry.generated_memory.video_url ? (
+                  <video 
+                    src={entry.generated_memory.video_url} 
+                    controls
+                    loop
+                    muted
+                    className="w-full h-48 object-cover rounded-lg border shadow-sm"
+                    poster="/placeholder.svg"
+                  >
+                    Your browser does not support the video tag.
+                  </video>
+                ) : entry.generated_memory.image_url ? (
+                  <img 
+                    src={entry.generated_memory.image_url} 
+                    alt="Generated memory visualization"
+                    className="w-full h-48 object-cover rounded-lg border shadow-sm"
+                  />
+                ) : (
+                  <div className="w-full h-48 bg-muted rounded-lg border flex items-center justify-center text-muted-foreground">
+                    <Sparkles className="w-8 h-8 mb-2" />
+                    <p className="text-sm">Visual generation in progress...</p>
+                  </div>
+                )}
+              </div>
+
+              {/* Memory Status */}
+              <div className="flex items-center justify-between text-xs text-muted-foreground">
+                <span>Status: {entry.generated_memory.status || 'Processing'}</span>
+                <span>Generated: {formatDate(entry.generated_memory.created_at || '')}</span>
+              </div>
             </div>
           )}
         </div>
