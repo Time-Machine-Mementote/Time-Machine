@@ -60,18 +60,9 @@ export class MemoryService {
         // Continue without video if generation fails
       }
 
-      // Generate audio narration
-      try {
-        if (storyResult.story) {
-          toast.loading('Generating audio narration...', { id: 'audio-generation' });
-          // Note: Audio generation would need implementation
-          // audioUrl = await this.generateAudioNarration(storyResult.story);
-          toast.success('Audio generation completed!', { id: 'audio-generation' });
-        }
-      } catch (error) {
-        console.error('Audio generation failed:', error);
-        toast.error('Audio generation failed', { id: 'audio-generation' });
-      }
+      // Audio generation - placeholder for now
+      // TODO: Implement audio generation service
+      console.log('Audio generation not yet implemented for story:', storyResult.story?.slice(0, 100) + '...');
 
       // Save memory to database
       const memory = await databaseService.upsertGeneratedMemory(params.entryId, {

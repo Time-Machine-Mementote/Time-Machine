@@ -57,7 +57,7 @@ async function generateVideoWithRunway(request: ImageRequest): Promise<{ id: str
   const payload = {
     promptText: request.prompt,
     model: "gen3a_turbo",
-    ratio: "960:960",
+    ratio: "16:9",
     seed: request.seed,
   }
 
