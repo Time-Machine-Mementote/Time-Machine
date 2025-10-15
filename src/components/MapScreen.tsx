@@ -11,6 +11,7 @@ import { Card } from '@/components/ui/card';
 import { Mic, MicOff, Volume2, VolumeX, SkipForward, Plus } from 'lucide-react';
 import { BERKELEY_CAMPUS_CENTER, BERKELEY_CAMPUS_ZOOM } from '@/types/memory';
 import type { Memory } from '@/types/memory';
+import { supabase } from '@/integrations/supabase/client';
 
 // Set Mapbox access token
 const MAPBOX_TOKEN = import.meta.env.VITE_MAPBOX_TOKEN;
@@ -33,8 +34,9 @@ export function MapScreen({ userId }: MapScreenProps) {
   const [showAddMemory, setShowAddMemory] = useState(false);
   const [isMuted, setIsMuted] = useState(false);
   const [isRecording, setIsRecording] = useState(false);
+  const [allMemories, setAllMemories] = useState<Memory[]>([]);
 
-  // Geofencing hook
+  // Geofencing hook (disabled for now)
   const {
     location,
     accuracy,
@@ -47,7 +49,7 @@ export function MapScreen({ userId }: MapScreenProps) {
     skip,
     clearQueue,
   } = useGeofencing({
-    enabled: true,
+    enabled: false, // Disable location tracking
     userId,
   });
 
@@ -77,9 +79,6 @@ export function MapScreen({ userId }: MapScreenProps) {
     map.current.on('load', () => {
       console.log('Map loaded successfully');
       setIsMapLoaded(true);
-      
-      // Add custom UC Berkeley campus style
-      addBerkeleyCampusStyle();
     });
 
     map.current.on('error', (e) => {
@@ -93,94 +92,92 @@ export function MapScreen({ userId }: MapScreenProps) {
     };
   }, []);
 
-  // Add UC Berkeley campus styling
-  const addBerkeleyCampusStyle = () => {
-    if (!map.current) return;
-
-    // Add campus landmarks as custom markers
-    const landmarks = [
-      { name: 'Campanile', lat: 37.8721, lng: -122.2585, type: 'landmark' },
-      { name: 'Memorial Glade', lat: 37.8719, lng: -122.2585, type: 'landmark' },
-      { name: 'Doe Library', lat: 37.8723, lng: -122.2587, type: 'building' },
-      { name: 'Sproul Plaza', lat: 37.8696, lng: -122.2593, type: 'plaza' },
-      { name: 'Sather Gate', lat: 37.8696, lng: -122.2593, type: 'gate' },
-    ];
-
-    landmarks.forEach(landmark => {
-      const el = document.createElement('div');
-      el.className = 'campus-landmark';
-      el.style.cssText = `
-        width: 20px;
-        height: 20px;
-        border-radius: 50%;
-        background-color: ${landmark.type === 'landmark' ? '#1f2937' : '#3b82f6'};
-        border: 2px solid white;
-        box-shadow: 0 2px 4px rgba(0,0,0,0.2);
-        cursor: pointer;
-      `;
-
-      new mapboxgl.Marker(el)
-        .setLngLat([landmark.lng, landmark.lat])
-        .setPopup(new mapboxgl.Popup().setHTML(`<strong>${landmark.name}</strong>`))
-        .addTo(map.current!);
-    });
-  };
-
-  // Update user location marker
+  // Load all memories from database
   useEffect(() => {
-    if (!map.current || !location || !isMapLoaded) return;
+    const loadAllMemories = async () => {
+      try {
+        console.log('Loading all memories from database...');
+        console.log('Supabase URL:', import.meta.env.VITE_SUPABASE_URL);
+        console.log('Supabase Key:', import.meta.env.VITE_SUPABASE_ANON_KEY ? 'Present' : 'Missing');
+        
+        // Test basic Supabase connection
+        console.log('Testing Supabase connection...');
+        const { data: testData, error: testError } = await supabase
+          .from('_supabase_migrations')
+          .select('*')
+          .limit(1);
+        
+        console.log('Connection test result:', { testData, testError });
+        
+        // Check authentication status
+        const { data: { session } } = await supabase.auth.getSession();
+        console.log('Current session:', session);
+        
+        // Try a simple count query first
+        const { count, error: countError } = await supabase
+          .from('memories')
+          .select('*', { count: 'exact', head: true });
+        
+        console.log('Memory count:', count);
+        console.log('Count error:', countError);
+        
+        const { data, error } = await supabase
+          .from('memories')
+          .select('*')
+          .limit(50); // Limit to first 50 memories
 
-    // Remove existing user marker
-    const existingMarker = document.querySelector('.user-location-marker');
-    if (existingMarker) {
-      existingMarker.remove();
-    }
+        if (error) {
+          console.error('Error loading memories:', error);
+          console.error('Error details:', error.message, error.code, error.hint);
+          return;
+        }
 
-    // Add new user marker
-    const el = document.createElement('div');
-    el.className = 'user-location-marker';
-    el.style.cssText = `
-      width: 16px;
-      height: 16px;
-      border-radius: 50%;
-      background-color: #10b981;
-      border: 3px solid white;
-      box-shadow: 0 2px 8px rgba(0,0,0,0.3);
-      animation: pulse 2s infinite;
-    `;
-
-    // Add pulse animation
-    const style = document.createElement('style');
-    style.textContent = `
-      @keyframes pulse {
-        0% { transform: scale(1); opacity: 1; }
-        50% { transform: scale(1.2); opacity: 0.7; }
-        100% { transform: scale(1); opacity: 1; }
+        console.log('Loaded memories from database:', data);
+        console.log('Number of memories loaded:', data?.length || 0);
+        setAllMemories(data || []);
+      } catch (err) {
+        console.error('Failed to load memories:', err);
       }
-    `;
-    document.head.appendChild(style);
+    };
 
-    new mapboxgl.Marker(el)
-      .setLngLat([location.lng, location.lat])
-      .setPopup(new mapboxgl.Popup().setHTML(`
-        <div>
-          <strong>Your Location</strong><br>
-          Accuracy: ${Math.round(accuracy || 0)}m
-        </div>
-      `))
-      .addTo(map.current);
-  }, [location, accuracy, isMapLoaded]);
+    loadAllMemories();
+  }, []);
 
   // Update memory markers
   useEffect(() => {
     if (!map.current || !isMapLoaded) return;
 
-    // Remove existing memory markers
+    // Remove existing memory markers more thoroughly
     const existingMarkers = document.querySelectorAll('.memory-marker');
     existingMarkers.forEach(marker => marker.remove());
+    
+    // Also remove any markers that might be attached to the map
+    if (map.current) {
+      const mapMarkers = map.current.getContainer().querySelectorAll('.mapboxgl-marker');
+      mapMarkers.forEach(marker => marker.remove());
+    }
 
-    // Add new memory markers
-    nearbyMemories.forEach(memory => {
+    console.log('All memories from database:', allMemories);
+    console.log('Memory IDs:', allMemories.map(m => m.id));
+    console.log('Memory summaries:', allMemories.map(m => m.summary));
+
+    // Deduplicate memories by summary to prevent showing the same memory multiple times
+    const uniqueMemories = allMemories.reduce((acc, memory) => {
+      if (!acc.find(m => m.summary === memory.summary)) {
+        acc.push(memory);
+      } else {
+        console.log('Duplicate found by summary:', memory.summary);
+      }
+      return acc;
+    }, [] as Memory[]);
+
+    console.log('Unique memories after deduplication:', uniqueMemories.length);
+    console.log('Unique memory summaries:', uniqueMemories.map(m => m.summary));
+
+    // Add new memory markers (show ALL memories, not just nearby ones)
+    uniqueMemories.forEach((memory, index) => {
+      console.log(`Creating marker ${index + 1} for:`, memory.summary, 'at', [memory.lng, memory.lat]);
+      
       const el = document.createElement('div');
       el.className = 'memory-marker';
       el.style.cssText = `
@@ -192,25 +189,15 @@ export function MapScreen({ userId }: MapScreenProps) {
         border: 2px solid white;
         box-shadow: 0 2px 4px rgba(0,0,0,0.2);
         cursor: pointer;
-        position: relative;
-      `;
-
-      // Add radius circle
-      const radiusEl = document.createElement('div');
-      radiusEl.style.cssText = `
         position: absolute;
-        top: 50%;
-        left: 50%;
         transform: translate(-50%, -50%);
-        width: ${memory.radius_m * 2}px;
-        height: ${memory.radius_m * 2}px;
-        border: 1px dashed rgba(139, 92, 246, 0.3);
-        border-radius: 50%;
-        pointer-events: none;
+        pointer-events: auto;
       `;
-      el.appendChild(radiusEl);
 
-      const marker = new mapboxgl.Marker(el)
+      const marker = new mapboxgl.Marker({
+        element: el,
+        anchor: 'center'
+      })
         .setLngLat([memory.lng, memory.lat])
         .setPopup(new mapboxgl.Popup().setHTML(`
           <div class="p-2">
@@ -230,7 +217,7 @@ export function MapScreen({ userId }: MapScreenProps) {
         });
       });
     });
-  }, [nearbyMemories, isMapLoaded]);
+  }, [allMemories, isMapLoaded]);
 
   // Handle mute toggle
   const handleMuteToggle = () => {
@@ -273,22 +260,11 @@ export function MapScreen({ userId }: MapScreenProps) {
         <Card className="p-3 bg-white/90 backdrop-blur-sm">
           <div className="flex items-center justify-between">
             <div className="flex items-center space-x-2">
-              <div className={`w-2 h-2 rounded-full ${isTracking ? 'bg-green-500' : 'bg-red-500'}`} />
+              <div className="w-2 h-2 rounded-full bg-blue-500" />
               <span className="text-sm font-medium">
-                {isTracking ? 'Tracking' : 'Not tracking'}
+                Showing {allMemories.length} memories
               </span>
-              {accuracy && (
-                <span className="text-xs text-gray-500">
-                  ±{Math.round(accuracy)}m
-                </span>
-              )}
             </div>
-            
-            {error && (
-              <div className="text-xs text-red-600">
-                {error}
-              </div>
-            )}
           </div>
         </Card>
       </div>
@@ -336,7 +312,7 @@ export function MapScreen({ userId }: MapScreenProps) {
         <AddMemorySheet
           isOpen={showAddMemory}
           onClose={() => setShowAddMemory(false)}
-          userLocation={location}
+          userLocation={null}
           userId={userId}
         />
       )}
