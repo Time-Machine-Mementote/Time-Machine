@@ -12,6 +12,181 @@ export type Database = {
   }
   public: {
     Tables: {
+      memories: {
+        Row: {
+          id: string
+          author_id: string
+          text: string
+          created_at: string
+          t_start: string | null
+          t_end: string | null
+          lat: number
+          lng: number
+          radius_m: number
+          place_name: string | null
+          audio_url: string | null
+          privacy: 'private' | 'friends' | 'public'
+          tags: string[] | null
+          parent_memory_id: string | null
+          source: string
+          model_version: string | null
+          summary: string | null
+          extracted_places: any | null
+          extracted_times: any | null
+          extracted_people: string[] | null
+          updated_at: string
+        }
+        Insert: {
+          id?: string
+          author_id: string
+          text: string
+          created_at?: string
+          t_start?: string | null
+          t_end?: string | null
+          lat: number
+          lng: number
+          radius_m?: number
+          place_name?: string | null
+          audio_url?: string | null
+          privacy?: 'private' | 'friends' | 'public'
+          tags?: string[] | null
+          parent_memory_id?: string | null
+          source?: string
+          model_version?: string | null
+          summary?: string | null
+          extracted_places?: any | null
+          extracted_times?: any | null
+          extracted_people?: string[] | null
+          updated_at?: string
+        }
+        Update: {
+          id?: string
+          author_id?: string
+          text?: string
+          created_at?: string
+          t_start?: string | null
+          t_end?: string | null
+          lat?: number
+          lng?: number
+          radius_m?: number
+          place_name?: string | null
+          audio_url?: string | null
+          privacy?: 'private' | 'friends' | 'public'
+          tags?: string[] | null
+          parent_memory_id?: string | null
+          source?: string
+          model_version?: string | null
+          summary?: string | null
+          extracted_places?: any | null
+          extracted_times?: any | null
+          extracted_people?: string[] | null
+          updated_at?: string
+        }
+      }
+      memory_links: {
+        Row: {
+          id: string
+          from_id: string
+          to_id: string
+          relation: 'original' | 'recall' | 'retell' | 'inspired_by'
+          created_at: string
+        }
+        Insert: {
+          id?: string
+          from_id: string
+          to_id: string
+          relation: 'original' | 'recall' | 'retell' | 'inspired_by'
+          created_at?: string
+        }
+        Update: {
+          id?: string
+          from_id?: string
+          to_id?: string
+          relation?: 'original' | 'recall' | 'retell' | 'inspired_by'
+          created_at?: string
+        }
+      }
+      plays: {
+        Row: {
+          id: string
+          user_id: string
+          memory_id: string
+          heard_at: string
+          lat: number | null
+          lng: number | null
+          device_info: any | null
+        }
+        Insert: {
+          id?: string
+          user_id: string
+          memory_id: string
+          heard_at?: string
+          lat?: number | null
+          lng?: number | null
+          device_info?: any | null
+        }
+        Update: {
+          id?: string
+          user_id?: string
+          memory_id?: string
+          heard_at?: string
+          lat?: number | null
+          lng?: number | null
+          device_info?: any | null
+        }
+      }
+      places: {
+        Row: {
+          id: string
+          name: string
+          lat: number
+          lng: number
+          confidence: number | null
+          place_type: string | null
+          created_at: string
+        }
+        Insert: {
+          id?: string
+          name: string
+          lat: number
+          lng: number
+          confidence?: number | null
+          place_type?: string | null
+          created_at?: string
+        }
+        Update: {
+          id?: string
+          name?: string
+          lat?: number
+          lng?: number
+          confidence?: number | null
+          place_type?: string | null
+          created_at?: string
+        }
+      }
+      friendships: {
+        Row: {
+          id: string
+          user_id: string
+          friend_id: string
+          status: 'pending' | 'accepted' | 'blocked'
+          created_at: string
+        }
+        Insert: {
+          id?: string
+          user_id: string
+          friend_id: string
+          status?: 'pending' | 'accepted' | 'blocked'
+          created_at?: string
+        }
+        Update: {
+          id?: string
+          user_id?: string
+          friend_id?: string
+          status?: 'pending' | 'accepted' | 'blocked'
+          created_at?: string
+        }
+      }
       profiles: {
         Row: {
           id: string
@@ -127,6 +302,10 @@ export type Database = {
     Enums: {
       entry_type: 'text' | 'voice' | 'media'
       memory_status: 'pending' | 'generated' | 'failed'
+      memory_privacy: 'private' | 'friends' | 'public'
+      memory_source: 'manual' | 'ai_generated' | 'imported'
+      memory_relation: 'original' | 'recall' | 'retell' | 'inspired_by'
+      friendship_status: 'pending' | 'accepted' | 'blocked'
     }
     CompositeTypes: {
       [_ in never]: never
@@ -253,6 +432,13 @@ export type CompositeTypes<
 
 export const Constants = {
   public: {
-    Enums: {},
+    Enums: {
+      entry_type: ['text', 'voice', 'media'] as const,
+      memory_status: ['pending', 'generated', 'failed'] as const,
+      memory_privacy: ['private', 'friends', 'public'] as const,
+      memory_source: ['manual', 'ai_generated', 'imported'] as const,
+      memory_relation: ['original', 'recall', 'retell', 'inspired_by'] as const,
+      friendship_status: ['pending', 'accepted', 'blocked'] as const,
+    },
   },
 } as const

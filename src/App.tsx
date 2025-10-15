@@ -1,38 +1,46 @@
 import { Toaster } from "@/components/ui/toaster";
 import { Toaster as Sonner } from "sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
-// Removed react-query provider (unused)
 import { BrowserRouter, Routes, Route } from "react-router-dom";
-import Layout from "./components/Layout";
 import { AuthGuard } from "./components/AuthGuard";
-import Index from "./pages/Index";
-import JournalEntry from "./pages/JournalEntry";
-import TakeMeBack from "./pages/TakeMeBack";
+import { MapScreen } from "./components/MapScreen";
 import NotFound from "./pages/NotFound";
+import { useEffect, useState } from "react";
+import { supabase } from "@/integrations/supabase/client";
 
-// const queryClient = new QueryClient();
+const App = () => {
+  const [user, setUser] = useState<any>(null);
 
-const App = () => (
-  <>
-    <TooltipProvider>
-      <Toaster />
-      <Sonner />
-      <BrowserRouter>
-        <AuthGuard>
-          <Layout>
-            <Routes>
-              <Route path="/" element={<Index />} />
-              <Route path="/journal" element={<JournalEntry />} />
-              <Route path="/take-me-back" element={<TakeMeBack />} />
+  useEffect(() => {
+    // Get initial session
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      setUser(session?.user ?? null);
+    });
 
-              {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
-              <Route path="*" element={<NotFound />} />
-            </Routes>
-          </Layout>
-        </AuthGuard>
-      </BrowserRouter>
-    </TooltipProvider>
-  </>
-);
+    // Listen for auth changes
+    const {
+      data: { subscription },
+    } = supabase.auth.onAuthStateChange((_event, session) => {
+      setUser(session?.user ?? null);
+    });
+
+    return () => subscription.unsubscribe();
+  }, []);
+
+  return (
+    <>
+      <TooltipProvider>
+        <Toaster />
+        <Sonner />
+        <BrowserRouter>
+          <Routes>
+            <Route path="/" element={<MapScreen userId={user?.id} />} />
+            <Route path="*" element={<NotFound />} />
+          </Routes>
+        </BrowserRouter>
+      </TooltipProvider>
+    </>
+  );
+};
 
 export default App;

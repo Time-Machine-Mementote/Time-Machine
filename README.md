@@ -1,73 +1,146 @@
-# Welcome to your Lovable project
+# Berkeley Memory Map
 
-## Project info
+A mobile web app (PWA) that displays a map of UC Berkeley and auto-plays short, generated audio "memories" tied to exact locations as you walk around campus.
 
-**URL**: https://lovable.dev/projects/fe4c6e66-be7c-48f0-84b4-0d22b59c3c29
+## 🎯 Features
 
-## How can I edit this code?
+- **Interactive UC Berkeley Map** - Built with Mapbox GL JS
+- **Location-Based Memory Playback** - Audio plays when you enter memory radius
+- **Memory Creation** - Add memories with text, voice, or clipboard paste
+- **AI-Powered Processing** - OpenAI integration for entity extraction and TTS
+- **Real-time Geofencing** - Turf.js for proximity detection
+- **Supabase Backend** - PostgreSQL with PostGIS for spatial data
+- **PWA Support** - Installable on mobile devices
 
-There are several ways of editing your application.
+## 🚀 Quick Start
 
-**Use Lovable**
+### Prerequisites
+- Node.js 18+ installed
+- Mapbox API token
+- OpenAI API key
+- Supabase project
 
-Simply visit the [Lovable Project](https://lovable.dev/projects/fe4c6e66-be7c-48f0-84b4-0d22b59c3c29) and start prompting.
+### Installation
 
-Changes made via Lovable will be committed automatically to this repo.
+1. **Clone the repository**
+   ```bash
+   git clone https://github.com/YOUR_USERNAME/berkeley-memory-map.git
+   cd berkeley-memory-map
+   ```
 
-**Use your preferred IDE**
+2. **Install dependencies**
+   ```bash
+   npm install
+   ```
 
-If you want to work locally using your own IDE, you can clone this repo and push changes. Pushed changes will also be reflected in Lovable.
+3. **Set up environment variables**
+   Create `.env.local` file:
+   ```bash
+   # Berkeley Memory Map Environment Variables
+   VITE_MAPBOX_TOKEN=your_mapbox_token_here
+   MAPBOX_GEOCODING_TOKEN=your_mapbox_token_here
+   VITE_OPENAI_API_KEY=your_openai_key_here
 
-The only requirement is having Node.js & npm installed - [install with nvm](https://github.com/nvm-sh/nvm#installing-and-updating)
+   # Supabase Configuration
+   VITE_SUPABASE_URL=your_supabase_url
+   VITE_SUPABASE_ANON_KEY=your_supabase_anon_key
+   ```
 
-Follow these steps:
+4. **Set up Supabase Database**
+   - Go to your Supabase dashboard
+   - Run the migration files in `supabase/migrations/`
+   - See `SUPABASE_SETUP.md` for detailed instructions
 
-```sh
-# Step 1: Clone the repository using the project's Git URL.
-git clone <YOUR_GIT_URL>
+5. **Start development server**
+   ```bash
+   npm run dev
+   ```
 
-# Step 2: Navigate to the project directory.
-cd <YOUR_PROJECT_NAME>
+6. **Open in browser**
+   Navigate to `http://localhost:8080` (or the port shown in terminal)
 
-# Step 3: Install the necessary dependencies.
-npm i
+## 🗄️ Database Setup
 
-# Step 4: Start the development server with auto-reloading and an instant preview.
-npm run dev
+### Run Migrations
+1. Go to Supabase Dashboard → SQL Editor
+2. Run `supabase/migrations/20250115000002_clean_migration.sql`
+3. Run `supabase/migrations/20250115000005_complete_fix.sql`
+
+### Verify Setup
+```sql
+SELECT COUNT(*) as memory_count FROM public.memories;
 ```
 
-**Edit a file directly in GitHub**
+## 🏗️ Project Structure
 
-- Navigate to the desired file(s).
-- Click the "Edit" button (pencil icon) at the top right of the file view.
-- Make your changes and commit the changes.
+```
+src/
+├── components/          # React components
+│   ├── MapScreen.tsx   # Main map interface
+│   ├── AddMemorySheet.tsx # Memory creation form
+│   └── ui/             # Shadcn/ui components
+├── hooks/              # Custom React hooks
+│   └── useGeofencing.ts # Location tracking
+├── services/           # API services
+│   └── memoryApi.ts    # Supabase integration
+├── types/              # TypeScript definitions
+│   └── memory.ts       # Memory data types
+└── utils/              # Utility functions
+    └── audioQueue.ts   # Audio playback management
 
-**Use GitHub Codespaces**
+supabase/
+├── functions/          # Edge functions
+│   ├── extract-entities/
+│   ├── geocode-place/
+│   └── generate-audio/
+└── migrations/        # Database migrations
+```
 
-- Navigate to the main page of your repository.
-- Click on the "Code" button (green button) near the top right.
-- Select the "Codespaces" tab.
-- Click on "New codespace" to launch a new Codespace environment.
-- Edit files directly within the Codespace and commit and push your changes once you're done.
+## 🎨 Key Components
 
-## What technologies are used for this project?
+- **MapScreen**: Main map interface with Mapbox integration
+- **AddMemorySheet**: Scrollable form for creating memories
+- **SupabaseTest**: Database connection testing widget
+- **useGeofencing**: Location tracking and proximity detection
 
-This project is built with:
+## 🔧 Development
 
-- Vite
-- TypeScript
-- React
-- shadcn-ui
-- Tailwind CSS
+### Available Scripts
+- `npm run dev` - Start development server
+- `npm run build` - Build for production
+- `npm run preview` - Preview production build
 
-## How can I deploy this project?
+### Tech Stack
+- **Frontend**: React + TypeScript + Vite
+- **UI**: Shadcn/ui + Tailwind CSS
+- **Maps**: Mapbox GL JS
+- **Backend**: Supabase (PostgreSQL + PostGIS)
+- **AI**: OpenAI API (GPT-4 + TTS)
+- **Geospatial**: Turf.js
+- **State**: Zustand
 
-Simply open [Lovable](https://lovable.dev/projects/fe4c6e66-be7c-48f0-84b4-0d22b59c3c29) and click on Share -> Publish.
+## 📱 PWA Features
 
-## Can I connect a custom domain to my Lovable project?
+- Installable on mobile devices
+- Offline-capable (with service worker)
+- Native app-like experience
+- Push notifications support (future)
 
-Yes, you can!
+## 🤝 Contributing
 
-To connect a domain, navigate to Project > Settings > Domains and click Connect Domain.
+1. Fork the repository
+2. Create a feature branch: `git checkout -b feature/amazing-feature`
+3. Commit changes: `git commit -m 'Add amazing feature'`
+4. Push to branch: `git push origin feature/amazing-feature`
+5. Open a Pull Request
 
-Read more here: [Setting up a custom domain](https://docs.lovable.dev/tips-tricks/custom-domain#step-by-step-guide)
+## 📄 License
+
+This project is licensed under the MIT License - see the LICENSE file for details.
+
+## 🙏 Acknowledgments
+
+- UC Berkeley for the campus inspiration
+- Mapbox for mapping services
+- OpenAI for AI capabilities
+- Supabase for backend infrastructure

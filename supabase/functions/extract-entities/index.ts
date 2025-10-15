@@ -1,22 +1,36 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts"
 import { z } from "https://deno.land/x/zod@v3.22.4/mod.ts"
 
+// CORS headers
+const corsHeaders = {
+  'Access-Control-Allow-Origin': '*',
+  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
+}
+
 // Input validation schema
-const AudioRequestSchema = z.object({
+const ExtractEntitiesRequestSchema = z.object({
   text: z.string().min(1, "Text cannot be empty").max(4000, "Text too long"),
-  voice: z.enum(["alloy", "echo", "fable", "onyx", "nova", "shimmer"]).optional().default("alloy"),
-  model: z.enum(["tts-1", "tts-1-hd"]).optional().default("tts-1"),
-  response_format: z.enum(["mp3", "opus", "aac", "flac"]).optional().default("mp3"),
-  speed: z.number().min(0.25).max(4.0).optional().default(1.0),
-  memory_id: z.string().uuid().optional(),
 })
 
-type AudioRequest = z.infer<typeof AudioRequestSchema>
+type ExtractEntitiesRequest = z.infer<typeof ExtractEntitiesRequestSchema>
 
-// Rate limiting in memory (in production, use Redis or database)
+interface ExtractedEntities {
+  summary: string;
+  places: Array<{
+    name: string;
+    hint: string;
+  }>;
+  times: Array<{
+    start: string;
+    end?: string;
+  }>;
+  people: string[];
+}
+
+// Rate limiting
 const rateLimitMap = new Map<string, { count: number; resetTime: number }>()
 
-function checkRateLimit(userId: string, limit: number = 10, windowMs: number = 60000): boolean {
+function checkRateLimit(userId: string, limit: number = 20, windowMs: number = 60000): boolean {
   const now = Date.now()
   const userLimit = rateLimitMap.get(userId)
   
@@ -33,44 +47,73 @@ function checkRateLimit(userId: string, limit: number = 10, windowMs: number = 6
   return true
 }
 
-async function generateAudioWithOpenAI(request: AudioRequest): Promise<ArrayBuffer> {
+async function extractEntitiesWithOpenAI(request: ExtractEntitiesRequest): Promise<ExtractedEntities> {
   const openaiApiKey = Deno.env.get("OPENAI_API_KEY")
   
   if (!openaiApiKey) {
     throw new Error("OpenAI API key not configured")
   }
 
-  console.log("Generating audio with OpenAI TTS...")
-  console.log("Request:", { 
-    text: request.text.substring(0, 100) + "...", 
-    voice: request.voice, 
-    model: request.model 
-  })
+  const systemPrompt = `You are an expert at extracting structured information from personal memory text. Extract the following information and return it as valid JSON:
 
-  const response = await fetch("https://api.openai.com/v1/audio/speech", {
+1. summary: A concise title/summary (max 12 words)
+2. places: Array of places mentioned with hints about their type (e.g., "campus landmark", "city", "country", "neighborhood")
+3. times: Array of time expressions found (both absolute dates and relative times)
+4. people: Array of people mentioned by name
+
+Focus on:
+- UC Berkeley campus landmarks (Campanile, Memorial Glade, Doe Library, Sproul Plaza, etc.)
+- Other locations mentioned in the text
+- Any dates, times, or temporal references
+- Names of people mentioned
+
+Return ONLY valid JSON in this exact format:
+{
+  "summary": "Brief title here",
+  "places": [{"name": "Place Name", "hint": "type hint"}],
+  "times": [{"start": "time expression", "end": "optional end time"}],
+  "people": ["Person Name"]
+}`
+
+  const messages = [
+    { role: "system", content: systemPrompt },
+    { role: "user", content: `Extract entities from this memory text: ${request.text}` }
+  ]
+
+  const response = await fetch("https://api.openai.com/v1/chat/completions", {
     method: "POST",
     headers: {
       "Authorization": `Bearer ${openaiApiKey}`,
       "Content-Type": "application/json",
     },
     body: JSON.stringify({
-      model: request.model,
-      input: request.text,
-      voice: request.voice,
-      response_format: request.response_format,
-      speed: request.speed,
+      model: "gpt-4",
+      messages,
+      max_tokens: 500,
+      temperature: 0.1,
+      response_format: { type: "json_object" }
     }),
   })
 
-  console.log("OpenAI TTS response status:", response.status)
-
   if (!response.ok) {
     const errorData = await response.text()
-    console.error("OpenAI TTS error:", errorData)
-    throw new Error(`OpenAI TTS error: ${response.status} - ${errorData}`)
+    throw new Error(`OpenAI API error: ${response.status} - ${errorData}`)
   }
 
-  return await response.arrayBuffer()
+  const data = await response.json()
+  
+  if (!data.choices || data.choices.length === 0) {
+    throw new Error("No response generated from OpenAI")
+  }
+
+  const extractedText = data.choices[0].message.content.trim()
+  
+  try {
+    return JSON.parse(extractedText) as ExtractedEntities
+  } catch (error) {
+    console.error("Failed to parse OpenAI response:", extractedText)
+    throw new Error("Invalid JSON response from OpenAI")
+  }
 }
 
 serve(async (req) => {
@@ -146,22 +189,14 @@ serve(async (req) => {
 
     // Parse and validate request body
     const body = await req.json()
-    const validatedRequest = AudioRequestSchema.parse(body)
+    const validatedRequest = ExtractEntitiesRequestSchema.parse(body)
 
-    // Generate audio
-    const audioBuffer = await generateAudioWithOpenAI(validatedRequest)
-
-    // Convert to base64 for JSON response
-    const base64Audio = btoa(
-      String.fromCharCode(...new Uint8Array(audioBuffer))
-    )
+    // Extract entities
+    const entities = await extractEntitiesWithOpenAI(validatedRequest)
 
     return new Response(JSON.stringify({
       success: true,
-      audioContent: base64Audio,
-      audioUrl: `data:audio/${validatedRequest.response_format};base64,${base64Audio}`,
-      format: validatedRequest.response_format,
-      voice: validatedRequest.voice,
+      entities,
     }), {
       status: 200,
       headers: {
@@ -171,7 +206,7 @@ serve(async (req) => {
     })
 
   } catch (error) {
-    console.error("Error in generate-audio function:", error)
+    console.error("Error in extract-entities function:", error)
     
     let status = 500
     let message = "Internal server error"
@@ -179,7 +214,7 @@ serve(async (req) => {
     if (error instanceof z.ZodError) {
       status = 400
       message = `Validation error: ${error.errors.map(e => e.message).join(", ")}`
-    } else if (error.message.includes("OpenAI TTS error")) {
+    } else if (error.message.includes("OpenAI API error")) {
       status = 502
       message = error.message
     } else if (error.message.includes("Rate limit")) {
