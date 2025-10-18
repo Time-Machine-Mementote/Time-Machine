@@ -174,8 +174,13 @@ export function AddMemorySheet({ isOpen, onClose, userLocation, userId }: AddMem
 
   // Initialize speech recognition
   useEffect(() => {
+    console.log('Initializing speech recognition...');
+    console.log('webkitSpeechRecognition available:', 'webkitSpeechRecognition' in window);
+    console.log('SpeechRecognition available:', 'SpeechRecognition' in window);
+    
     if ('webkitSpeechRecognition' in window || 'SpeechRecognition' in window) {
       const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+      console.log('Creating SpeechRecognition instance');
       recognitionRef.current = new SpeechRecognition();
       
       recognitionRef.current.continuous = true;
@@ -317,19 +322,24 @@ export function AddMemorySheet({ isOpen, onClose, userLocation, userId }: AddMem
   };
 
   const handleRecordingToggle = () => {
+    console.log('handleRecordingToggle called', { isRecording, recognitionRef: recognitionRef.current });
+    
     if (!recognitionRef.current) {
+      console.log('Speech recognition not available');
       toast.error('Speech recognition is not supported in this browser. Please use Chrome or Safari.');
       return;
     }
 
     if (isRecording) {
       // Stop recording
+      console.log('Stopping recording');
       recognitionRef.current.stop();
       setIsRecording(false);
       setIsTranscribing(false);
       toast.success('Recording stopped');
     } else {
       // Start recording
+      console.log('Starting recording');
       try {
         recognitionRef.current.start();
         setIsRecording(true);
