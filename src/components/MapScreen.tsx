@@ -15,12 +15,19 @@ import { supabase } from '@/integrations/supabase/client';
 
 // Set Mapbox access token
 const MAPBOX_TOKEN = import.meta.env.VITE_MAPBOX_TOKEN;
-console.log('Mapbox token from env:', MAPBOX_TOKEN ? MAPBOX_TOKEN.substring(0, 20) + '...' : 'NOT FOUND');
+console.log('Environment check:', {
+  nodeEnv: import.meta.env.MODE,
+  mapboxToken: MAPBOX_TOKEN ? MAPBOX_TOKEN.substring(0, 20) + '...' : 'NOT FOUND',
+  supabaseUrl: import.meta.env.VITE_SUPABASE_URL ? 'Present' : 'Missing',
+  supabaseKey: import.meta.env.VITE_SUPABASE_ANON_KEY ? 'Present' : 'Missing'
+});
+
 if (MAPBOX_TOKEN) {
   mapboxgl.accessToken = MAPBOX_TOKEN;
   console.log('Mapbox token set successfully');
 } else {
   console.error('Mapbox token not found in environment variables');
+  console.error('Available env vars:', Object.keys(import.meta.env));
 }
 
 interface MapScreenProps {
@@ -35,6 +42,7 @@ export function MapScreen({ userId }: MapScreenProps) {
   const [isMuted, setIsMuted] = useState(false);
   const [isRecording, setIsRecording] = useState(false);
   const [allMemories, setAllMemories] = useState<Memory[]>([]);
+  const [mapError, setMapError] = useState<string | null>(null);
 
   // Geofencing hook (disabled for now)
   const {
@@ -81,9 +89,12 @@ export function MapScreen({ userId }: MapScreenProps) {
       setIsMapLoaded(true);
     });
 
-    map.current.on('error', (e) => {
-      console.error('Map error:', e);
-    });
+        map.current.on('error', (e) => {
+          console.error('Map error:', e);
+          console.error('Mapbox token status:', MAPBOX_TOKEN ? 'Present' : 'Missing');
+          console.error('Error details:', e.error);
+          setMapError(`Map failed to load: ${e.error?.message || 'Unknown error'}`);
+        });
 
     return () => {
       if (map.current) {
@@ -246,11 +257,16 @@ export function MapScreen({ userId }: MapScreenProps) {
         <div className="absolute inset-0 flex items-center justify-center bg-gray-100">
           <div className="text-center">
             <div className="text-lg font-semibold text-gray-700 mb-2">
-              {MAPBOX_TOKEN ? 'Loading Berkeley Memory Map...' : 'Mapbox token not configured'}
+              {mapError ? 'Map Loading Error' : MAPBOX_TOKEN ? 'Loading Berkeley Memory Map...' : 'Mapbox token not configured'}
             </div>
             <div className="text-sm text-gray-500">
-              {MAPBOX_TOKEN ? 'Please wait while the map loads' : 'Please check your environment variables'}
+              {mapError ? mapError : MAPBOX_TOKEN ? 'Please wait while the map loads' : 'Please check your environment variables'}
             </div>
+            {mapError && (
+              <div className="mt-4 p-3 bg-red-50 rounded text-sm text-red-700">
+                Check browser console for more details. This is likely due to missing environment variables in production.
+              </div>
+            )}
           </div>
         </div>
       )}
