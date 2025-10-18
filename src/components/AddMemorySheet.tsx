@@ -1,5 +1,5 @@
 // Add Memory Sheet Component
-import React, { useState } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from '@/components/ui/sheet';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -7,10 +7,12 @@ import { Textarea } from '@/components/ui/textarea';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Label } from '@/components/ui/label';
 import { Slider } from '@/components/ui/slider';
-import { Mic, MicOff, Send, Loader2 } from 'lucide-react';
+import { Mic, MicOff, Send, Loader2, MapPin } from 'lucide-react';
 import { supabase } from '@/integrations/supabase/client';
 import { toast } from 'sonner';
 import type { UserLocation } from '@/types/memory';
+import mapboxgl from 'mapbox-gl';
+import 'mapbox-gl/dist/mapbox-gl.css';
 
 interface AddMemorySheetProps {
   isOpen: boolean;
@@ -30,6 +32,70 @@ export function AddMemorySheet({ isOpen, onClose, userLocation, userId }: AddMem
   const [useCustomLocation, setUseCustomLocation] = useState(false);
   const [customLat, setCustomLat] = useState('');
   const [customLng, setCustomLng] = useState('');
+  const [showMapPicker, setShowMapPicker] = useState(false);
+  const [pickedLocation, setPickedLocation] = useState<{lat: number, lng: number} | null>(null);
+  const mapContainer = useRef<HTMLDivElement>(null);
+  const map = useRef<mapboxgl.Map | null>(null);
+
+  // Simple name extraction function
+  const extractNames = (text: string): string[] => {
+    // Common name patterns - this is a simple implementation
+    const namePatterns = [
+      /\b[A-Z][a-z]+ [A-Z][a-z]+\b/g, // First Last
+      /\b[A-Z][a-z]+(?: [A-Z][a-z]+)*\b/g, // Names starting with capital letters
+    ];
+    
+    const names = new Set<string>();
+    
+    namePatterns.forEach(pattern => {
+      const matches = text.match(pattern);
+      if (matches) {
+        matches.forEach(match => {
+          // Filter out common words that aren't names
+          const commonWords = ['The', 'This', 'That', 'There', 'Then', 'They', 'When', 'Where', 'What', 'Why', 'How'];
+          if (!commonWords.includes(match.split(' ')[0])) {
+            names.add(match);
+          }
+        });
+      }
+    });
+    
+    return Array.from(names);
+  };
+
+  // Initialize map when map picker is shown
+  useEffect(() => {
+    if (!showMapPicker || !mapContainer.current) return;
+
+    const MAPBOX_TOKEN = import.meta.env.VITE_MAPBOX_TOKEN;
+    if (!MAPBOX_TOKEN) {
+      toast.error('Mapbox token not found');
+      return;
+    }
+
+    mapboxgl.accessToken = MAPBOX_TOKEN;
+
+    map.current = new mapboxgl.Map({
+      container: mapContainer.current,
+      style: 'mapbox://styles/mapbox/streets-v12',
+      center: userLocation ? [userLocation.lng, userLocation.lat] : [-122.2585, 37.8721],
+      zoom: 15,
+    });
+
+    // Add click handler to pick location
+    map.current.on('click', (e) => {
+      const { lng, lat } = e.lngLat;
+      setPickedLocation({ lat, lng });
+      toast.success(`Location picked: ${lat.toFixed(6)}, ${lng.toFixed(6)}`);
+    });
+
+    return () => {
+      if (map.current) {
+        map.current.remove();
+        map.current = null;
+      }
+    };
+  }, [showMapPicker, userLocation]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -51,14 +117,9 @@ export function AddMemorySheet({ isOpen, onClose, userLocation, userId }: AddMem
       let finalLat: number;
       let finalLng: number;
       
-      if (useCustomLocation && customLat && customLng) {
-        finalLat = parseFloat(customLat);
-        finalLng = parseFloat(customLng);
-        
-        if (isNaN(finalLat) || isNaN(finalLng)) {
-          toast.error('Please enter valid latitude and longitude coordinates');
-          return;
-        }
+      if (useCustomLocation && pickedLocation) {
+        finalLat = pickedLocation.lat;
+        finalLng = pickedLocation.lng;
       } else if (userLocation) {
         finalLat = userLocation.lat;
         finalLng = userLocation.lng;
@@ -66,6 +127,9 @@ export function AddMemorySheet({ isOpen, onClose, userLocation, userId }: AddMem
         finalLat = 37.8721; // Default to Berkeley campus
         finalLng = -122.2585;
       }
+
+      // Extract names from the memory text
+      const extractedNames = extractNames(text.trim());
 
       // Create a simple memory record directly in Supabase
       const { data, error } = await supabase
@@ -79,6 +143,7 @@ export function AddMemorySheet({ isOpen, onClose, userLocation, userId }: AddMem
           summary: summary.trim() || text.trim().substring(0, 100) + '...',
           radius_m: radius[0],
           author_id: userId || null,
+          extracted_people: extractedNames,
         })
         .select()
         .single();
@@ -100,6 +165,8 @@ export function AddMemorySheet({ isOpen, onClose, userLocation, userId }: AddMem
       setUseCustomLocation(false);
       setCustomLat('');
       setCustomLng('');
+      setShowMapPicker(false);
+      setPickedLocation(null);
       
       // Close the sheet
       onClose();
@@ -180,38 +247,35 @@ export function AddMemorySheet({ isOpen, onClose, userLocation, userId }: AddMem
             </div>
             
             {useCustomLocation && (
-              <div className="grid grid-cols-2 gap-3 p-3 bg-blue-50 rounded-lg">
-                <div className="space-y-1">
-                  <Label htmlFor="custom-lat" className="text-xs">Latitude</Label>
-                  <Input
-                    id="custom-lat"
-                    type="number"
-                    step="any"
-                    placeholder="37.8721"
-                    value={customLat}
-                    onChange={(e) => setCustomLat(e.target.value)}
-                    disabled={isProcessing}
-                    className="text-sm"
-                  />
-                </div>
-                <div className="space-y-1">
-                  <Label htmlFor="custom-lng" className="text-xs">Longitude</Label>
-                  <Input
-                    id="custom-lng"
-                    type="number"
-                    step="any"
-                    placeholder="-122.2585"
-                    value={customLng}
-                    onChange={(e) => setCustomLng(e.target.value)}
-                    disabled={isProcessing}
-                    className="text-sm"
-                  />
-                </div>
-                <div className="col-span-2">
-                  <p className="text-xs text-blue-600">
-                    💡 Tip: You can get coordinates from Google Maps by right-clicking on a location
-                  </p>
-                </div>
+              <div className="space-y-3">
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={() => setShowMapPicker(!showMapPicker)}
+                  disabled={isProcessing}
+                  className="w-full"
+                >
+                  <MapPin className="h-4 w-4 mr-2" />
+                  {showMapPicker ? 'Hide Map Picker' : 'Pick Location on Map'}
+                </Button>
+                
+                {pickedLocation && (
+                  <div className="p-3 bg-green-50 rounded-lg">
+                    <p className="text-sm text-green-800">
+                      📍 Picked Location: {pickedLocation.lat.toFixed(6)}, {pickedLocation.lng.toFixed(6)}
+                    </p>
+                  </div>
+                )}
+                
+                {showMapPicker && (
+                  <div className="h-64 border rounded-lg overflow-hidden">
+                    <div ref={mapContainer} className="w-full h-full" />
+                  </div>
+                )}
+                
+                <p className="text-xs text-blue-600">
+                  💡 Click on the map to pick your desired location
+                </p>
               </div>
             )}
           </div>
@@ -241,6 +305,22 @@ export function AddMemorySheet({ isOpen, onClose, userLocation, userId }: AddMem
               disabled={isProcessing}
               required
             />
+            {text.trim() && (
+              <div className="p-2 bg-blue-50 rounded text-xs">
+                <p className="text-blue-800 font-medium mb-1">Detected names:</p>
+                {extractNames(text.trim()).length > 0 ? (
+                  <div className="flex flex-wrap gap-1">
+                    {extractNames(text.trim()).map((name, index) => (
+                      <span key={index} className="bg-blue-200 text-blue-800 px-2 py-1 rounded">
+                        {name}
+                      </span>
+                    ))}
+                  </div>
+                ) : (
+                  <p className="text-blue-600">No names detected</p>
+                )}
+              </div>
+            )}
           </div>
 
           {/* Summary Input */}
