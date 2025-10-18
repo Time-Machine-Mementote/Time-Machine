@@ -82,20 +82,46 @@ export function AddMemorySheet({ isOpen, onClose, userLocation, userId }: AddMem
       zoom: 15,
     });
 
+    let marker: mapboxgl.Marker | null = null;
+
     // Add click handler to pick location
     map.current.on('click', (e) => {
       const { lng, lat } = e.lngLat;
       setPickedLocation({ lat, lng });
+      
+      // Remove existing marker
+      if (marker) {
+        marker.remove();
+      }
+      
+      // Add new marker at clicked location
+      marker = new mapboxgl.Marker({
+        color: '#ef4444', // Red color for the pin
+        scale: 1.2
+      })
+        .setLngLat([lng, lat])
+        .addTo(map.current!);
+      
       toast.success(`Location picked: ${lat.toFixed(6)}, ${lng.toFixed(6)}`);
     });
 
     return () => {
+      if (marker) {
+        marker.remove();
+      }
       if (map.current) {
         map.current.remove();
         map.current = null;
       }
     };
-  }, [showMapPicker, userLocation]);
+  }, [showMapPicker]); // Removed userLocation dependency to prevent constant re-renders
+
+  // Clear picked location when map picker is closed
+  useEffect(() => {
+    if (!showMapPicker) {
+      setPickedLocation(null);
+    }
+  }, [showMapPicker]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
