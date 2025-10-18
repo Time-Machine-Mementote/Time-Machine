@@ -8,7 +8,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Label } from '@/components/ui/label';
 import { Slider } from '@/components/ui/slider';
 import { Mic, MicOff, Send, Loader2 } from 'lucide-react';
-import { processMemoryText } from '@/services/memoryApi';
+import { supabase } from '@/integrations/supabase/client';
 import { toast } from 'sonner';
 import type { UserLocation } from '@/types/memory';
 
@@ -25,6 +25,8 @@ export function AddMemorySheet({ isOpen, onClose, userLocation, userId }: AddMem
   const [radius, setRadius] = useState([30]);
   const [isRecording, setIsRecording] = useState(false);
   const [isProcessing, setIsProcessing] = useState(false);
+  const [placeName, setPlaceName] = useState('');
+  const [summary, setSummary] = useState('');
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -34,30 +36,51 @@ export function AddMemorySheet({ isOpen, onClose, userLocation, userId }: AddMem
       return;
     }
 
-    if (!userLocation) {
-      toast.error('Location not available. Please enable location services.');
-      return;
-    }
-
-    if (!userId) {
-      toast.error('Please sign in to create memories');
+    if (!placeName.trim()) {
+      toast.error('Please enter a place name');
       return;
     }
 
     setIsProcessing(true);
 
     try {
-      await processMemoryText(
-        text.trim(),
-        userLocation.lat,
-        userLocation.lng,
-        userId,
-        privacy
-      );
+      // Create a simple memory record directly in Supabase
+      const { data, error } = await supabase
+        .from('memories')
+        .insert({
+          text: text.trim(),
+          lat: userLocation?.lat || 37.8721, // Default to Berkeley campus if no location
+          lng: userLocation?.lng || -122.2585,
+          place_name: placeName.trim(),
+          privacy: privacy,
+          summary: summary.trim() || text.trim().substring(0, 100) + '...',
+          radius_m: radius[0],
+          author_id: userId || null,
+        })
+        .select()
+        .single();
 
+      if (error) {
+        console.error('Supabase error:', error);
+        throw error;
+      }
+
+      console.log('Memory created successfully:', data);
       toast.success('Memory created successfully!');
+      
+      // Reset form
       setText('');
+      setPlaceName('');
+      setSummary('');
+      setRadius([30]);
+      setPrivacy('public');
+      
+      // Close the sheet
       onClose();
+      
+      // Refresh the page to show the new memory
+      window.location.reload();
+      
     } catch (error) {
       console.error('Failed to create memory:', error);
       toast.error('Failed to create memory. Please try again.');
@@ -94,7 +117,7 @@ export function AddMemorySheet({ isOpen, onClose, userLocation, userId }: AddMem
         <div className="flex-1 overflow-y-auto px-1 -mx-1">
           <form onSubmit={handleSubmit} className="space-y-6 mt-6 pb-8">
           {/* Location Info */}
-          {userLocation && (
+          {userLocation ? (
             <div className="p-3 bg-green-50 rounded-lg">
               <p className="text-sm text-green-800">
                 📍 Location: {userLocation.lat.toFixed(6)}, {userLocation.lng.toFixed(6)}
@@ -103,19 +126,57 @@ export function AddMemorySheet({ isOpen, onClose, userLocation, userId }: AddMem
                 Accuracy: ±{Math.round(userLocation.accuracy || 0)}m
               </p>
             </div>
+          ) : (
+            <div className="p-3 bg-yellow-50 rounded-lg">
+              <p className="text-sm text-yellow-800">
+                📍 Using default Berkeley campus location
+              </p>
+              <p className="text-xs text-yellow-600">
+                You can manually set coordinates below
+              </p>
+            </div>
           )}
+
+          {/* Place Name Input */}
+          <div className="space-y-2">
+            <Label htmlFor="place-name">Place Name *</Label>
+            <Input
+              id="place-name"
+              placeholder="e.g., Campanile, Memorial Glade, Doe Library"
+              value={placeName}
+              onChange={(e) => setPlaceName(e.target.value)}
+              disabled={isProcessing}
+              required
+            />
+          </div>
 
           {/* Text Input */}
           <div className="space-y-2">
-            <Label htmlFor="memory-text">Memory Text</Label>
+            <Label htmlFor="memory-text">Memory Text *</Label>
             <Textarea
               id="memory-text"
-              placeholder="Describe your memory... (e.g., 'Oct 2, 2025 when Cory and I saw the world through the Time Machine at the Campanile')"
+              placeholder="Describe your memory... (e.g., 'Had coffee with friends at the campus cafe')"
               value={text}
               onChange={(e) => setText(e.target.value)}
               className="min-h-[100px]"
               disabled={isProcessing}
+              required
             />
+          </div>
+
+          {/* Summary Input */}
+          <div className="space-y-2">
+            <Label htmlFor="summary">Summary (optional)</Label>
+            <Input
+              id="summary"
+              placeholder="Short summary of your memory"
+              value={summary}
+              onChange={(e) => setSummary(e.target.value)}
+              disabled={isProcessing}
+            />
+            <p className="text-xs text-gray-500">
+              If left empty, will use first 100 characters of your memory text
+            </p>
           </div>
 
           {/* Input Methods */}
@@ -149,9 +210,9 @@ export function AddMemorySheet({ isOpen, onClose, userLocation, userId }: AddMem
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="public">🌍 Public - Anyone can hear</SelectItem>
-                <SelectItem value="friends">👥 Friends - Only friends can hear</SelectItem>
-                <SelectItem value="private">🔒 Private - Only you can hear</SelectItem>
+                <SelectItem value="public">🌍 Public - Anyone can see</SelectItem>
+                <SelectItem value="friends">👥 Friends - Only friends can see</SelectItem>
+                <SelectItem value="private">🔒 Private - Only you can see</SelectItem>
               </SelectContent>
             </Select>
           </div>
@@ -168,7 +229,7 @@ export function AddMemorySheet({ isOpen, onClose, userLocation, userId }: AddMem
               className="w-full"
             />
             <p className="text-xs text-gray-500">
-              Audio will play when someone enters this radius around your memory location
+              This radius will be shown around your memory marker on the map
             </p>
           </div>
 
@@ -176,7 +237,7 @@ export function AddMemorySheet({ isOpen, onClose, userLocation, userId }: AddMem
           <Button
             type="submit"
             className="w-full"
-            disabled={isProcessing || !text.trim() || !userLocation}
+            disabled={isProcessing || !text.trim() || !placeName.trim()}
           >
             {isProcessing ? (
               <>
