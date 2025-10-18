@@ -14,6 +14,53 @@ import type { UserLocation } from '@/types/memory';
 import mapboxgl from 'mapbox-gl';
 import 'mapbox-gl/dist/mapbox-gl.css';
 
+// TypeScript declarations for Web Speech API
+declare global {
+  interface Window {
+    SpeechRecognition: new () => SpeechRecognition;
+    webkitSpeechRecognition: new () => SpeechRecognition;
+  }
+}
+
+interface SpeechRecognition extends EventTarget {
+  continuous: boolean;
+  interimResults: boolean;
+  lang: string;
+  start(): void;
+  stop(): void;
+  onresult: ((this: SpeechRecognition, ev: SpeechRecognitionEvent) => any) | null;
+  onerror: ((this: SpeechRecognition, ev: SpeechRecognitionErrorEvent) => any) | null;
+  onend: ((this: SpeechRecognition, ev: Event) => any) | null;
+}
+
+interface SpeechRecognitionEvent extends Event {
+  resultIndex: number;
+  results: SpeechRecognitionResultList;
+}
+
+interface SpeechRecognitionResultList {
+  length: number;
+  item(index: number): SpeechRecognitionResult;
+  [index: number]: SpeechRecognitionResult;
+}
+
+interface SpeechRecognitionResult {
+  length: number;
+  item(index: number): SpeechRecognitionAlternative;
+  [index: number]: SpeechRecognitionAlternative;
+  isFinal: boolean;
+}
+
+interface SpeechRecognitionAlternative {
+  transcript: string;
+  confidence: number;
+}
+
+interface SpeechRecognitionErrorEvent extends Event {
+  error: string;
+  message: string;
+}
+
 interface AddMemorySheetProps {
   isOpen: boolean;
   onClose: () => void;
@@ -34,8 +81,10 @@ export function AddMemorySheet({ isOpen, onClose, userLocation, userId }: AddMem
   const [customLng, setCustomLng] = useState('');
   const [showMapPicker, setShowMapPicker] = useState(false);
   const [pickedLocation, setPickedLocation] = useState<{lat: number, lng: number} | null>(null);
+  const [isTranscribing, setIsTranscribing] = useState(false);
   const mapContainer = useRef<HTMLDivElement>(null);
   const map = useRef<mapboxgl.Map | null>(null);
+  const recognitionRef = useRef<SpeechRecognition | null>(null);
 
   // Simple name extraction function
   const extractNames = (text: string): string[] => {
@@ -123,6 +172,65 @@ export function AddMemorySheet({ isOpen, onClose, userLocation, userId }: AddMem
     }
   }, [showMapPicker]);
 
+  // Initialize speech recognition
+  useEffect(() => {
+    if ('webkitSpeechRecognition' in window || 'SpeechRecognition' in window) {
+      const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+      recognitionRef.current = new SpeechRecognition();
+      
+      recognitionRef.current.continuous = true;
+      recognitionRef.current.interimResults = true;
+      recognitionRef.current.lang = 'en-US';
+
+      recognitionRef.current.onresult = (event) => {
+        let finalTranscript = '';
+        let interimTranscript = '';
+
+        for (let i = event.resultIndex; i < event.results.length; i++) {
+          const transcript = event.results[i][0].transcript;
+          if (event.results[i].isFinal) {
+            finalTranscript += transcript;
+          } else {
+            interimTranscript += transcript;
+          }
+        }
+
+        // Update text with both final and interim results
+        if (finalTranscript) {
+          setText(prevText => prevText + finalTranscript);
+          setIsTranscribing(false);
+        } else if (interimTranscript) {
+          setIsTranscribing(true);
+        }
+      };
+
+      recognitionRef.current.onerror = (event) => {
+        console.error('Speech recognition error:', event.error);
+        setIsRecording(false);
+        setIsTranscribing(false);
+        
+        if (event.error === 'not-allowed') {
+          toast.error('Microphone access denied. Please allow microphone access and try again.');
+        } else if (event.error === 'no-speech') {
+          toast.error('No speech detected. Please try again.');
+        } else {
+          toast.error(`Speech recognition error: ${event.error}`);
+        }
+      };
+
+      recognitionRef.current.onend = () => {
+        setIsRecording(false);
+        setIsTranscribing(false);
+      };
+    }
+
+    return () => {
+      if (recognitionRef.current) {
+        recognitionRef.current.stop();
+      }
+    };
+  }, []);
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     
@@ -209,10 +317,27 @@ export function AddMemorySheet({ isOpen, onClose, userLocation, userId }: AddMem
   };
 
   const handleRecordingToggle = () => {
-    setIsRecording(!isRecording);
-    // TODO: Implement voice recording with Web Speech API
-    if (!isRecording) {
-      toast.info('Voice recording not yet implemented');
+    if (!recognitionRef.current) {
+      toast.error('Speech recognition is not supported in this browser. Please use Chrome or Safari.');
+      return;
+    }
+
+    if (isRecording) {
+      // Stop recording
+      recognitionRef.current.stop();
+      setIsRecording(false);
+      setIsTranscribing(false);
+      toast.success('Recording stopped');
+    } else {
+      // Start recording
+      try {
+        recognitionRef.current.start();
+        setIsRecording(true);
+        toast.success('Recording started - speak now!');
+      } catch (error) {
+        console.error('Failed to start recording:', error);
+        toast.error('Failed to start recording. Please try again.');
+      }
     }
   };
 
@@ -371,10 +496,10 @@ export function AddMemorySheet({ isOpen, onClose, userLocation, userId }: AddMem
               variant="outline"
               onClick={handleRecordingToggle}
               disabled={isProcessing}
-              className={isRecording ? 'bg-red-100 text-red-700' : ''}
+              className={`${isRecording ? 'bg-red-100 text-red-700 border-red-300' : ''} ${isTranscribing ? 'animate-pulse' : ''}`}
             >
               {isRecording ? <MicOff className="h-4 w-4" /> : <Mic className="h-4 w-4" />}
-              {isRecording ? 'Stop' : 'Record'}
+              {isRecording ? (isTranscribing ? 'Listening...' : 'Stop') : 'Record Voice'}
             </Button>
 
             <Button
@@ -386,6 +511,19 @@ export function AddMemorySheet({ isOpen, onClose, userLocation, userId }: AddMem
               📋 Paste
             </Button>
           </div>
+
+          {/* Voice Recording Status */}
+          {isRecording && (
+            <div className="p-3 bg-red-50 rounded-lg">
+              <p className="text-sm text-red-800 flex items-center">
+                <Mic className="h-4 w-4 mr-2" />
+                {isTranscribing ? 'Listening and transcribing...' : 'Recording started - speak clearly!'}
+              </p>
+              <p className="text-xs text-red-600 mt-1">
+                Click "Stop" when you're done speaking
+              </p>
+            </div>
+          )}
 
           {/* Privacy Setting */}
           <div className="space-y-2">
