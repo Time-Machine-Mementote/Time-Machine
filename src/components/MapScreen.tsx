@@ -75,6 +75,14 @@ export function MapScreen({ userId }: MapScreenProps) {
 
     console.log('Initializing map with token:', MAPBOX_TOKEN.substring(0, 20) + '...');
 
+    console.log('Creating map with config:', {
+      container: mapContainer.current,
+      style: 'mapbox://styles/mapbox/streets-v12',
+      center: BERKELEY_CAMPUS_CENTER,
+      zoom: BERKELEY_CAMPUS_ZOOM,
+      token: MAPBOX_TOKEN ? 'Present' : 'Missing'
+    });
+
     map.current = new mapboxgl.Map({
       container: mapContainer.current,
       style: 'mapbox://styles/mapbox/streets-v12',
