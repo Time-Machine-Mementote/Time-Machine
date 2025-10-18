@@ -27,6 +27,9 @@ export function AddMemorySheet({ isOpen, onClose, userLocation, userId }: AddMem
   const [isProcessing, setIsProcessing] = useState(false);
   const [placeName, setPlaceName] = useState('');
   const [summary, setSummary] = useState('');
+  const [useCustomLocation, setUseCustomLocation] = useState(false);
+  const [customLat, setCustomLat] = useState('');
+  const [customLng, setCustomLng] = useState('');
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -44,13 +47,33 @@ export function AddMemorySheet({ isOpen, onClose, userLocation, userId }: AddMem
     setIsProcessing(true);
 
     try {
+      // Determine which location to use
+      let finalLat: number;
+      let finalLng: number;
+      
+      if (useCustomLocation && customLat && customLng) {
+        finalLat = parseFloat(customLat);
+        finalLng = parseFloat(customLng);
+        
+        if (isNaN(finalLat) || isNaN(finalLng)) {
+          toast.error('Please enter valid latitude and longitude coordinates');
+          return;
+        }
+      } else if (userLocation) {
+        finalLat = userLocation.lat;
+        finalLng = userLocation.lng;
+      } else {
+        finalLat = 37.8721; // Default to Berkeley campus
+        finalLng = -122.2585;
+      }
+
       // Create a simple memory record directly in Supabase
       const { data, error } = await supabase
         .from('memories')
         .insert({
           text: text.trim(),
-          lat: userLocation?.lat || 37.8721, // Default to Berkeley campus if no location
-          lng: userLocation?.lng || -122.2585,
+          lat: finalLat,
+          lng: finalLng,
           place_name: placeName.trim(),
           privacy: privacy,
           summary: summary.trim() || text.trim().substring(0, 100) + '...',
@@ -74,6 +97,9 @@ export function AddMemorySheet({ isOpen, onClose, userLocation, userId }: AddMem
       setSummary('');
       setRadius([30]);
       setPrivacy('public');
+      setUseCustomLocation(false);
+      setCustomLat('');
+      setCustomLng('');
       
       // Close the sheet
       onClose();
@@ -136,6 +162,59 @@ export function AddMemorySheet({ isOpen, onClose, userLocation, userId }: AddMem
               </p>
             </div>
           )}
+
+          {/* Location Override */}
+          <div className="space-y-3">
+            <div className="flex items-center space-x-2">
+              <input
+                type="checkbox"
+                id="use-custom-location"
+                checked={useCustomLocation}
+                onChange={(e) => setUseCustomLocation(e.target.checked)}
+                disabled={isProcessing}
+                className="rounded"
+              />
+              <Label htmlFor="use-custom-location" className="text-sm font-medium">
+                Use custom location instead of current location
+              </Label>
+            </div>
+            
+            {useCustomLocation && (
+              <div className="grid grid-cols-2 gap-3 p-3 bg-blue-50 rounded-lg">
+                <div className="space-y-1">
+                  <Label htmlFor="custom-lat" className="text-xs">Latitude</Label>
+                  <Input
+                    id="custom-lat"
+                    type="number"
+                    step="any"
+                    placeholder="37.8721"
+                    value={customLat}
+                    onChange={(e) => setCustomLat(e.target.value)}
+                    disabled={isProcessing}
+                    className="text-sm"
+                  />
+                </div>
+                <div className="space-y-1">
+                  <Label htmlFor="custom-lng" className="text-xs">Longitude</Label>
+                  <Input
+                    id="custom-lng"
+                    type="number"
+                    step="any"
+                    placeholder="-122.2585"
+                    value={customLng}
+                    onChange={(e) => setCustomLng(e.target.value)}
+                    disabled={isProcessing}
+                    className="text-sm"
+                  />
+                </div>
+                <div className="col-span-2">
+                  <p className="text-xs text-blue-600">
+                    💡 Tip: You can get coordinates from Google Maps by right-clicking on a location
+                  </p>
+                </div>
+              </div>
+            )}
+          </div>
 
           {/* Place Name Input */}
           <div className="space-y-2">

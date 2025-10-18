@@ -49,7 +49,7 @@ export function MapScreen({ userId }: MapScreenProps) {
     skip,
     clearQueue,
   } = useGeofencing({
-    enabled: false, // Disable location tracking
+    enabled: true, // Re-enabled location tracking
     userId,
   });
 
@@ -312,7 +312,7 @@ export function MapScreen({ userId }: MapScreenProps) {
         <AddMemorySheet
           isOpen={showAddMemory}
           onClose={() => setShowAddMemory(false)}
-          userLocation={null}
+          userLocation={location ? { lat: location.lat, lng: location.lng, accuracy, timestamp: Date.now() } : null}
           userId={userId}
         />
       )}
