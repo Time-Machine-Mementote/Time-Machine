@@ -82,7 +82,7 @@ export function AddMemorySheet({ isOpen, onClose, userLocation, userId }: AddMem
   const [showMapPicker, setShowMapPicker] = useState(false);
   const [pickedLocation, setPickedLocation] = useState<{lat: number, lng: number} | null>(null);
   const [isTranscribing, setIsTranscribing] = useState(false);
-  const mapContainer = useRef<HTMLDivElement>(null);
+  const mapPickerContainer = useRef<HTMLDivElement>(null);
   const map = useRef<mapboxgl.Map | null>(null);
   const recognitionRef = useRef<SpeechRecognition | null>(null);
 
@@ -114,7 +114,7 @@ export function AddMemorySheet({ isOpen, onClose, userLocation, userId }: AddMem
 
   // Initialize map when map picker is shown
   useEffect(() => {
-    if (!showMapPicker || !mapContainer.current) return;
+    if (!showMapPicker || !mapPickerContainer.current) return;
 
     const MAPBOX_TOKEN = import.meta.env.VITE_MAPBOX_TOKEN;
     if (!MAPBOX_TOKEN) {
@@ -125,7 +125,7 @@ export function AddMemorySheet({ isOpen, onClose, userLocation, userId }: AddMem
     mapboxgl.accessToken = MAPBOX_TOKEN;
 
     map.current = new mapboxgl.Map({
-      container: mapContainer.current,
+      container: mapPickerContainer.current,
       style: 'mapbox://styles/mapbox/streets-v12',
       center: userLocation ? [userLocation.lng, userLocation.lat] : [-122.2585, 37.8721],
       zoom: 15,
@@ -430,7 +430,7 @@ export function AddMemorySheet({ isOpen, onClose, userLocation, userId }: AddMem
                 
                 {showMapPicker && (
                   <div className="h-64 border rounded-lg overflow-hidden">
-                    <div ref={mapContainer} className="w-full h-full" />
+                    <div ref={mapPickerContainer} className="w-full h-full" />
                   </div>
                 )}
                 
