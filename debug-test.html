@@ -1,0 +1,37 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Supabase Debug Test</title>
+</head>
+<body>
+    <h1>Supabase Connection Test</h1>
+    <div id="debug-info"></div>
+    
+    <script>
+        // Test environment variables
+        const debugDiv = document.getElementById('debug-info');
+        
+        function addDebugInfo(label, value) {
+            const p = document.createElement('p');
+            p.innerHTML = `<strong>${label}:</strong> ${value}`;
+            debugDiv.appendChild(p);
+        }
+        
+        addDebugInfo('Page loaded', new Date().toLocaleString());
+        
+        // Test if we can access the Supabase client
+        try {
+            // This will only work if we're on the actual app page
+            if (typeof window.supabase !== 'undefined') {
+                addDebugInfo('Supabase client', 'Available');
+            } else {
+                addDebugInfo('Supabase client', 'Not available (this is expected on this test page)');
+            }
+        } catch (e) {
+            addDebugInfo('Supabase client error', e.message);
+        }
+        
+        addDebugInfo('Instructions', 'Go to http://localhost:8080 and look for the Supabase Integration Test box in the top-right corner');
+    </script>
+</body>
+</html>

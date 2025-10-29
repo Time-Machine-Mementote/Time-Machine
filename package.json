@@ -4,7 +4,14 @@
   "version": "1.0.0",
   "type": "module",
   "description": "A mobile web app that displays a map of UC Berkeley and auto-plays short, generated audio memories tied to exact locations",
-  "keywords": ["berkeley", "memory", "map", "pwa", "location", "audio"],
+  "keywords": [
+    "berkeley",
+    "memory",
+    "map",
+    "pwa",
+    "location",
+    "audio"
+  ],
   "author": "Your Name",
   "license": "MIT",
   "repository": {
@@ -53,6 +60,8 @@
     "@radix-ui/react-tooltip": "^1.1.4",
     "@supabase/supabase-js": "^2.53.0",
     "@tanstack/react-query": "^5.56.2",
+    "@turf/distance": "^6.5.0",
+    "@turf/helpers": "^6.5.0",
     "@types/mapbox-gl": "^3.1.0",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
@@ -73,8 +82,6 @@
     "sonner": "^1.5.0",
     "tailwind-merge": "^2.5.2",
     "tailwindcss-animate": "^1.0.7",
-    "@turf/distance": "^6.5.0",
-    "@turf/helpers": "^6.5.0",
     "vaul": "^0.9.3",
     "zod": "^3.23.8",
     "zustand": "^5.0.0"
@@ -93,6 +100,7 @@
     "globals": "^15.9.0",
     "lovable-tagger": "^1.1.7",
     "postcss": "^8.4.47",
+    "supabase": "^2.51.0",
     "tailwindcss": "^3.4.11",
     "typescript": "^5.5.3",
     "typescript-eslint": "^8.0.1",
