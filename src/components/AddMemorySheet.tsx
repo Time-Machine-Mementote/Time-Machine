@@ -7,10 +7,11 @@ import { Textarea } from '@/components/ui/textarea';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Label } from '@/components/ui/label';
 import { Slider } from '@/components/ui/slider';
-import { Mic, MicOff, Send, Loader2 } from 'lucide-react';
+import { Send, Loader2 } from 'lucide-react';
 import { processMemoryText } from '@/services/memoryApi';
 import { toast } from 'sonner';
 import type { UserLocation } from '@/types/memory';
+import VoiceInput from '@/components/VoiceInput';
 
 interface AddMemorySheetProps {
   isOpen: boolean;
@@ -23,7 +24,6 @@ export function AddMemorySheet({ isOpen, onClose, userLocation, userId }: AddMem
   const [text, setText] = useState('');
   const [privacy, setPrivacy] = useState<'private' | 'friends' | 'public'>('public');
   const [radius, setRadius] = useState([30]);
-  const [isRecording, setIsRecording] = useState(false);
   const [isProcessing, setIsProcessing] = useState(false);
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -66,12 +66,18 @@ export function AddMemorySheet({ isOpen, onClose, userLocation, userId }: AddMem
     }
   };
 
-  const handleRecordingToggle = () => {
-    setIsRecording(!isRecording);
-    // TODO: Implement voice recording with Web Speech API
-    if (!isRecording) {
-      toast.info('Voice recording not yet implemented');
+  const handleVoiceTranscription = (transcribedText: string) => {
+    // Append or replace text with transcription
+    if (text.trim()) {
+      setText(text + ' ' + transcribedText);
+    } else {
+      setText(transcribedText);
     }
+    toast.success('Voice transcription completed!');
+  };
+
+  const handleVoiceError = (error: string) => {
+    toast.error(error);
   };
 
   const handlePasteFromClipboard = async () => {
@@ -118,26 +124,23 @@ export function AddMemorySheet({ isOpen, onClose, userLocation, userId }: AddMem
             />
           </div>
 
-          {/* Input Methods */}
-          <div className="flex space-x-2">
-            <Button
-              type="button"
-              variant="outline"
-              onClick={handleRecordingToggle}
+          {/* Voice Input */}
+          <div className="space-y-3">
+            <Label>Quick Input Methods</Label>
+            <VoiceInput
+              onTranscriptionComplete={handleVoiceTranscription}
+              onError={handleVoiceError}
               disabled={isProcessing}
-              className={isRecording ? 'bg-red-100 text-red-700' : ''}
-            >
-              {isRecording ? <MicOff className="h-4 w-4" /> : <Mic className="h-4 w-4" />}
-              {isRecording ? 'Stop' : 'Record'}
-            </Button>
-
+            />
+            
             <Button
               type="button"
               variant="outline"
               onClick={handlePasteFromClipboard}
               disabled={isProcessing}
+              className="w-full"
             >
-              📋 Paste
+              📋 Paste from Clipboard
             </Button>
           </div>
 

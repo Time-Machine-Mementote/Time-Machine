@@ -112,10 +112,11 @@ export function useGeofencing(options: UseGeofencingOptions = {}) {
         }
       );
 
-      // Start periodic memory checking
+      // Start periodic memory checking (optimized - only when location exists)
       intervalRef.current = setInterval(async () => {
-        if (state.location) {
-          await checkNearbyMemories(state.location);
+        const currentLocation = state.location;
+        if (currentLocation) {
+          await checkNearbyMemories(currentLocation);
         }
       }, finalConfig.sampleInterval);
 

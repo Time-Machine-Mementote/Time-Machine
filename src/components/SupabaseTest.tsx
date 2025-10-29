@@ -16,16 +16,15 @@ export const SupabaseTest: React.FC = () => {
           .limit(5);
 
         if (error) {
-          console.error('Supabase error:', error);
+          if (import.meta.env.DEV) console.error('Supabase error:', error);
           setError(error.message);
           setConnectionStatus('error');
         } else {
-          console.log('Supabase connected successfully:', data);
           setMemories(data || []);
           setConnectionStatus('connected');
         }
       } catch (err) {
-        console.error('Connection test failed:', err);
+        if (import.meta.env.DEV) console.error('Connection test failed:', err);
         setError(err instanceof Error ? err.message : 'Unknown error');
         setConnectionStatus('error');
       }

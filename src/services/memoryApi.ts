@@ -68,14 +68,29 @@ export async function createMemory(memory: Omit<Memory, 'id' | 'created_at'>) {
   return data;
 }
 
+// Optimized: Use PostGIS spatial queries for fast radius searches
 export async function getMemoriesInRadius(lat: number, lng: number, radiusM: number = 100) {
-  const { data, error } = await supabase
-    .from('memories')
-    .select('*')
-    .gte('lat', lat - (radiusM / 111000)) // rough lat conversion
-    .lte('lat', lat + (radiusM / 111000))
-    .gte('lng', lng - (radiusM / (111000 * Math.cos(lat * Math.PI / 180))))
-    .lte('lng', lng + (radiusM / (111000 * Math.cos(lat * Math.PI / 180))));
+  // Use PostGIS ST_DWithin for efficient spatial queries (if location column exists)
+  // Fallback to bounding box for now until PostGIS is fully set up
+  const { data, error } = await supabase.rpc('get_memories_in_radius', {
+    center_lat: lat,
+    center_lng: lng,
+    radius_meters: radiusM,
+  }).select('*');
+
+  // Fallback to bounding box if RPC doesn't exist yet
+  if (error && error.code === '42883') {
+    const { data: fallbackData, error: fallbackError } = await supabase
+      .from('memories')
+      .select('*')
+      .gte('lat', lat - (radiusM / 111000))
+      .lte('lat', lat + (radiusM / 111000))
+      .gte('lng', lng - (radiusM / (111000 * Math.cos(lat * Math.PI / 180))))
+      .lte('lng', lng + (radiusM / (111000 * Math.cos(lat * Math.PI / 180))));
+    
+    if (fallbackError) throw fallbackError;
+    return fallbackData as Memory[];
+  }
 
   if (error) throw error;
   return data as Memory[];
