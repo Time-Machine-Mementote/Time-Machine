@@ -1,4 +1,4 @@
-import { useState, useCallback, useRef } from 'react';
+import { useState, useCallback, useRef, useEffect } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { synthesizeAudio } from '@/services/memoryApi';
 import { formatMemoryForNarration } from '@/utils/memoryNarration';
@@ -23,23 +23,60 @@ export function useMemoryAudio(): UseMemoryAudioReturn {
   const [currentAudioUrl, setCurrentAudioUrl] = useState<string | null>(null);
   const audioRef = useRef<HTMLAudioElement | null>(null);
 
-  // Initialize audio element
-  if (!audioRef.current) {
-    audioRef.current = new Audio();
-    audioRef.current.preload = 'none';
-    
-    audioRef.current.addEventListener('play', () => setIsPlaying(true));
-    audioRef.current.addEventListener('pause', () => setIsPlaying(false));
-    audioRef.current.addEventListener('ended', () => {
+  // Initialize audio element in useEffect to avoid render issues
+  useEffect(() => {
+    if (!audioRef.current) {
+      audioRef.current = new Audio();
+      audioRef.current.preload = 'none';
+      
+      audioRef.current.addEventListener('play', () => setIsPlaying(true));
+      audioRef.current.addEventListener('pause', () => setIsPlaying(false));
+      audioRef.current.addEventListener('ended', () => {
+        setIsPlaying(false);
+        setCurrentAudioUrl(null);
+      });
+      audioRef.current.addEventListener('error', (e) => {
+        console.error('Audio playback error:', e);
+        setIsPlaying(false);
+        toast.error('Failed to play audio');
+      });
+    }
+
+    return () => {
+      if (audioRef.current) {
+        audioRef.current.pause();
+        audioRef.current.src = '';
+        audioRef.current = null;
+      }
+    };
+  }, []);
+
+  /**
+   * Stops the currently playing audio
+   */
+  const stopPlaying = useCallback(() => {
+    if (audioRef.current) {
+      audioRef.current.pause();
+      audioRef.current.currentTime = 0;
       setIsPlaying(false);
       setCurrentAudioUrl(null);
-    });
-    audioRef.current.addEventListener('error', (e) => {
-      console.error('Audio playback error:', e);
-      setIsPlaying(false);
-      toast.error('Failed to play audio');
-    });
-  }
+    }
+  }, []);
+
+  /**
+   * Plays an audio URL (internal helper, no generation)
+   */
+  const playAudioUrl = useCallback(async (audioUrl: string) => {
+    // Stop any currently playing audio
+    stopPlaying();
+
+    // Play the audio
+    if (audioRef.current) {
+      audioRef.current.src = audioUrl;
+      await audioRef.current.play();
+      setCurrentAudioUrl(audioUrl);
+    }
+  }, [stopPlaying]);
 
   /**
    * Generates audio narration for a memory and plays it
@@ -50,7 +87,7 @@ export function useMemoryAudio(): UseMemoryAudioReturn {
       
       // If memory already has audio URL, use it
       if (memory.audio_url) {
-        await playMemory(memory);
+        await playAudioUrl(memory.audio_url);
         setIsGenerating(false);
         return;
       }
@@ -82,18 +119,14 @@ export function useMemoryAudio(): UseMemoryAudioReturn {
       toast.success('Audio ready!', { id: 'memory-audio' });
 
       // Play the generated audio
-      if (audioRef.current) {
-        audioRef.current.src = audioUrl;
-        await audioRef.current.play();
-        setCurrentAudioUrl(audioUrl);
-      }
+      await playAudioUrl(audioUrl);
     } catch (error) {
       console.error('Error generating audio:', error);
       toast.error('Failed to generate audio narration', { id: 'memory-audio' });
     } finally {
       setIsGenerating(false);
     }
-  }, []);
+  }, [playAudioUrl]);
 
   /**
    * Plays a memory's existing audio
@@ -108,41 +141,13 @@ export function useMemoryAudio(): UseMemoryAudioReturn {
         return;
       }
 
-      // Stop any currently playing audio
-      stopPlaying();
-
-      // Play the audio
-      if (audioRef.current) {
-        audioRef.current.src = audioUrl;
-        await audioRef.current.play();
-        setCurrentAudioUrl(audioUrl);
-      }
+      // Play the existing audio
+      await playAudioUrl(audioUrl);
     } catch (error) {
       console.error('Error playing audio:', error);
       toast.error('Failed to play audio');
     }
-  }, [generateAndPlay]);
-
-  /**
-   * Stops the currently playing audio
-   */
-  const stopPlaying = useCallback(() => {
-    if (audioRef.current) {
-      audioRef.current.pause();
-      audioRef.current.currentTime = 0;
-      setIsPlaying(false);
-      setCurrentAudioUrl(null);
-    }
-  }, []);
-
-  // Cleanup on unmount
-  const cleanup = useCallback(() => {
-    if (audioRef.current) {
-      audioRef.current.pause();
-      audioRef.current.src = '';
-      audioRef.current = null;
-    }
-  }, []);
+  }, [generateAndPlay, playAudioUrl]);
 
   return {
     isGenerating,

@@ -2,58 +2,111 @@
 import { supabase } from '@/integrations/supabase/client';
 import type { Memory, MemoryLink, Play, Place, ExtractedPlace, ExtractedTime } from '@/types/memory';
 
-const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL;
+// Get Supabase URL from client config or env (with fallback)
+const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL || 'https://iwwvjecrvgrdyptxhnwj.supabase.co';
+
+if (!SUPABASE_URL) {
+  console.error('VITE_SUPABASE_URL is not set in environment variables');
+}
 
 // Edge Function calls
 export async function extractEntities(text: string) {
-  const response = await fetch(`${SUPABASE_URL}/functions/v1/extract-entities`, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'Authorization': `Bearer ${(await supabase.auth.getSession()).data.session?.access_token}`,
-    },
-    body: JSON.stringify({ text }),
-  });
-
-  if (!response.ok) {
-    throw new Error(`Extract entities failed: ${response.status}`);
+  if (!SUPABASE_URL) {
+    throw new Error('Supabase URL is not configured');
   }
 
-  return response.json();
+  try {
+    const session = await supabase.auth.getSession();
+    const token = session.data.session?.access_token;
+
+    const response = await fetch(`${SUPABASE_URL}/functions/v1/extract-entities`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': token ? `Bearer ${token}` : '',
+      },
+      body: JSON.stringify({ text }),
+    });
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      throw new Error(`Extract entities failed: ${response.status} - ${errorText}`);
+    }
+
+    return response.json();
+  } catch (error) {
+    console.error('Failed to extract entities:', error);
+    if (error instanceof TypeError && error.message.includes('fetch')) {
+      throw new Error('Network error: Unable to connect to server. Please check your internet connection.');
+    }
+    throw error;
+  }
 }
 
 export async function geocodePlace(name: string, hint?: string) {
-  const response = await fetch(`${SUPABASE_URL}/functions/v1/geocode-place`, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'Authorization': `Bearer ${(await supabase.auth.getSession()).data.session?.access_token}`,
-    },
-    body: JSON.stringify({ name, hint }),
-  });
-
-  if (!response.ok) {
-    throw new Error(`Geocoding failed: ${response.status}`);
+  if (!SUPABASE_URL) {
+    throw new Error('Supabase URL is not configured');
   }
 
-  return response.json();
+  try {
+    const session = await supabase.auth.getSession();
+    const token = session.data.session?.access_token;
+
+    const response = await fetch(`${SUPABASE_URL}/functions/v1/geocode-place`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': token ? `Bearer ${token}` : '',
+      },
+      body: JSON.stringify({ name, hint }),
+    });
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      throw new Error(`Geocoding failed: ${response.status} - ${errorText}`);
+    }
+
+    return response.json();
+  } catch (error) {
+    console.error('Failed to geocode place:', error);
+    if (error instanceof TypeError && error.message.includes('fetch')) {
+      throw new Error('Network error: Unable to connect to server. Please check your internet connection.');
+    }
+    throw error;
+  }
 }
 
 export async function synthesizeAudio(text: string, memoryId?: string) {
-  const response = await fetch(`${SUPABASE_URL}/functions/v1/generate-audio`, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'Authorization': `Bearer ${(await supabase.auth.getSession()).data.session?.access_token}`,
-    },
-    body: JSON.stringify({ text, memory_id: memoryId }),
-  });
-
-  if (!response.ok) {
-    throw new Error(`Audio synthesis failed: ${response.status}`);
+  if (!SUPABASE_URL) {
+    throw new Error('Supabase URL is not configured');
   }
 
-  return response.json();
+  try {
+    const session = await supabase.auth.getSession();
+    const token = session.data.session?.access_token;
+
+    const response = await fetch(`${SUPABASE_URL}/functions/v1/generate-audio`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': token ? `Bearer ${token}` : '',
+      },
+      body: JSON.stringify({ text, memory_id: memoryId }),
+    });
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      throw new Error(`Audio synthesis failed: ${response.status} - ${errorText}`);
+    }
+
+    return response.json();
+  } catch (error) {
+    console.error('Failed to synthesize audio:', error);
+    if (error instanceof TypeError && error.message.includes('fetch')) {
+      throw new Error('Network error: Unable to connect to server. Please check your internet connection.');
+    }
+    throw error;
+  }
 }
 
 // Database operations
@@ -70,30 +123,42 @@ export async function createMemory(memory: Omit<Memory, 'id' | 'created_at'>) {
 
 // Optimized: Use PostGIS spatial queries for fast radius searches
 export async function getMemoriesInRadius(lat: number, lng: number, radiusM: number = 100) {
-  // Use PostGIS ST_DWithin for efficient spatial queries (if location column exists)
-  // Fallback to bounding box for now until PostGIS is fully set up
-  const { data, error } = await supabase.rpc('get_memories_in_radius', {
-    center_lat: lat,
-    center_lng: lng,
-    radius_meters: radiusM,
-  }).select('*');
+  try {
+    // Use PostGIS ST_DWithin for efficient spatial queries (if location column exists)
+    // Fallback to bounding box for now until PostGIS is fully set up
+    const { data, error } = await supabase.rpc('get_memories_in_radius', {
+      center_lat: lat,
+      center_lng: lng,
+      radius_meters: radiusM,
+    }).select('*');
 
-  // Fallback to bounding box if RPC doesn't exist yet
-  if (error && error.code === '42883') {
-    const { data: fallbackData, error: fallbackError } = await supabase
-      .from('memories')
-      .select('*')
-      .gte('lat', lat - (radiusM / 111000))
-      .lte('lat', lat + (radiusM / 111000))
-      .gte('lng', lng - (radiusM / (111000 * Math.cos(lat * Math.PI / 180))))
-      .lte('lng', lng + (radiusM / (111000 * Math.cos(lat * Math.PI / 180))));
-    
-    if (fallbackError) throw fallbackError;
-    return fallbackData as Memory[];
+    // Fallback to bounding box if RPC doesn't exist yet
+    if (error && (error.code === '42883' || error.code === 'P0001')) {
+      console.warn('RPC function not found, using bounding box fallback:', error.message);
+      const { data: fallbackData, error: fallbackError } = await supabase
+        .from('memories')
+        .select('*')
+        .gte('lat', lat - (radiusM / 111000))
+        .lte('lat', lat + (radiusM / 111000))
+        .gte('lng', lng - (radiusM / (111000 * Math.cos(lat * Math.PI / 180))))
+        .lte('lng', lng + (radiusM / (111000 * Math.cos(lat * Math.PI / 180))));
+      
+      if (fallbackError) {
+        console.error('Error fetching memories:', fallbackError);
+        return []; // Return empty array instead of throwing
+      }
+      return (fallbackData as Memory[]) || [];
+    }
+
+    if (error) {
+      console.error('Error fetching memories:', error);
+      return []; // Return empty array instead of throwing
+    }
+    return (data as Memory[]) || [];
+  } catch (error) {
+    console.error('Failed to get memories in radius:', error);
+    return []; // Return empty array on any error to prevent crashes
   }
-
-  if (error) throw error;
-  return data as Memory[];
 }
 
 export async function getMemoryById(id: string) {

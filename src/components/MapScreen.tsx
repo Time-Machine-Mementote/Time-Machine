@@ -175,6 +175,12 @@ export function MapScreen({ userId }: MapScreenProps) {
   // Update user location marker (optimized - update existing marker instead of recreating)
   useEffect(() => {
     if (!map.current || !location || !isMapLoaded) return;
+    
+    // Validate location coordinates
+    if (typeof location.lng !== 'number' || typeof location.lat !== 'number' ||
+        isNaN(location.lng) || isNaN(location.lat)) {
+      return;
+    }
 
     if (!userMarkerRef.current) {
       const el = document.createElement('div');
@@ -189,11 +195,24 @@ export function MapScreen({ userId }: MapScreenProps) {
         animation: pulse 2s infinite;
       `;
 
-      userMarkerRef.current = new mapboxgl.Marker(el).addTo(map.current);
+      userMarkerRef.current = new mapboxgl.Marker(el);
+      // Only add to map if we have valid coordinates
+      if (typeof location.lng === 'number' && typeof location.lat === 'number' &&
+          !isNaN(location.lng) && !isNaN(location.lat)) {
+        userMarkerRef.current.setLngLat([location.lng, location.lat]).addTo(map.current);
+      }
     }
 
-    // Update position (much faster than recreating)
-    userMarkerRef.current.setLngLat([location.lng, location.lat]);
+    // Update position (much faster than recreating) - only if marker exists and has valid coordinates
+    if (userMarkerRef.current && typeof location.lng === 'number' && typeof location.lat === 'number' &&
+        !isNaN(location.lng) && !isNaN(location.lat)) {
+      userMarkerRef.current.setLngLat([location.lng, location.lat]);
+      
+      // Ensure marker is added to map if it wasn't before
+      if (!userMarkerRef.current._map) {
+        userMarkerRef.current.addTo(map.current!);
+      }
+    }
     
     // Update popup only if accuracy changed significantly
     if (accuracy) {
@@ -229,6 +248,13 @@ export function MapScreen({ userId }: MapScreenProps) {
       nearbyMemories.forEach(memory => {
         // Skip if marker already exists
         if (markersRef.current.has(memory.id)) return;
+        
+        // Validate memory has valid coordinates
+        if (!memory || typeof memory.lng !== 'number' || typeof memory.lat !== 'number' ||
+            isNaN(memory.lng) || isNaN(memory.lat)) {
+          console.warn('Skipping memory with invalid coordinates:', memory);
+          return;
+        }
 
         const el = document.createElement('div');
         el.className = 'memory-marker';

@@ -289,6 +289,22 @@ export function AddMemorySheet({ isOpen, onClose, userLocation, userId }: AddMem
 
       if (error) {
         console.error('Supabase error:', error);
+        
+        // Show more specific error messages
+        let errorMessage = 'Failed to create memory. ';
+        if (error.code === '42501') {
+          errorMessage += 'Permission denied. You may need to sign in.';
+        } else if (error.code === '23503') {
+          errorMessage += 'Invalid reference. Please check your account.';
+        } else if (error.code === '23505') {
+          errorMessage += 'This memory already exists.';
+        } else if (error.message) {
+          errorMessage += error.message;
+        } else {
+          errorMessage += 'Please try again.';
+        }
+        
+        toast.error(errorMessage, { duration: 5000 });
         throw error;
       }
 
@@ -313,11 +329,16 @@ export function AddMemorySheet({ isOpen, onClose, userLocation, userId }: AddMem
       // Refresh the page to show the new memory
       window.location.reload();
       
-    } catch (error) {
+    } catch (error: any) {
       console.error('Failed to create memory:', error);
-      toast.error('Failed to create memory. Please try again.');
+      
+      // If error wasn't already handled above, show generic message
+      if (!error?.code) {
+        const errorMessage = error?.message || 'Unknown error occurred';
+        toast.error(`Failed to create memory: ${errorMessage}`, { duration: 5000 });
+      }
     } finally {
-      setIsProcessing(false);
+     setIsProcessing(false);
     }
   };
 
