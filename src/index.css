@@ -126,6 +126,7 @@
     @apply bg-background text-foreground font-['Inter'] antialiased;
     background: var(--gradient-background);
     min-height: 100vh;
+    /* Safe area support - individual components handle their own safe area insets */
   }
 
   h1, h2, h3, h4, h5, h6 {

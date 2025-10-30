@@ -5,9 +5,12 @@ import { Button } from '@/components/ui/button';
 interface VoiceRecorderProps {
   onRecordingComplete: (audioBlob: string) => void;
   existingRecording?: string;
+  ambientMode?: boolean; // If true, captures ambient sounds by disabling noise suppression/echo cancellation
+  onBlobReady?: (blob: Blob) => void; // Optional callback for raw blob (for upload)
 }
 
-const VoiceRecorder = ({ onRecordingComplete, existingRecording }: VoiceRecorderProps) => {
+const VoiceRecorder = ({ onRecordingComplete, existingRecording, ambientMode = false, onBlobReady }: VoiceRecorderProps) => {
+  const currentBlobRef = useRef<Blob | null>(null);
   const [isRecording, setIsRecording] = useState(false);
   const [isPlaying, setIsPlaying] = useState(false);
   const [recordingTime, setRecordingTime] = useState(0);
@@ -22,8 +25,9 @@ const VoiceRecorder = ({ onRecordingComplete, existingRecording }: VoiceRecorder
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ 
         audio: { 
-          echoCancellation: true,
-          noiseSuppression: true,
+          echoCancellation: !ambientMode, // Disable for ambient recording
+          noiseSuppression: !ambientMode, // Disable for ambient recording
+          autoGainControl: !ambientMode, // Disable for ambient recording
           sampleRate: 44100 
         } 
       });
@@ -43,6 +47,13 @@ const VoiceRecorder = ({ onRecordingComplete, existingRecording }: VoiceRecorder
 
       mediaRecorder.onstop = () => {
         const audioBlob = new Blob(chunksRef.current, { type: 'audio/webm' });
+        currentBlobRef.current = audioBlob;
+        
+        // Call blob callback if provided (for upload)
+        if (onBlobReady) {
+          onBlobReady(audioBlob);
+        }
+        
         const reader = new FileReader();
         reader.onloadend = () => {
           const base64Audio = reader.result as string;
@@ -68,7 +79,7 @@ const VoiceRecorder = ({ onRecordingComplete, existingRecording }: VoiceRecorder
       console.error('Error starting recording:', error);
       alert('Could not access microphone. Please check permissions.');
     }
-  }, [onRecordingComplete]);
+  }, [onRecordingComplete, ambientMode, onBlobReady]);
 
   const stopRecording = useCallback(() => {
     if (mediaRecorderRef.current && isRecording) {

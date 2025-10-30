@@ -410,13 +410,19 @@ export function MapScreen({ userId }: MapScreenProps) {
         </div>
       )}
 
-      {/* Control Panel */}
-      <div className="absolute bottom-4 right-4 z-10 space-y-2">
+      {/* Control Panel - Mobile-friendly with safe area insets */}
+      <div 
+        className="absolute z-10 space-y-2 bottom-4 right-4 sm:bottom-4 sm:right-4"
+        style={{
+          bottom: 'max(1.5rem, calc(1rem + env(safe-area-inset-bottom, 0px)))',
+          right: 'max(1.5rem, calc(1rem + env(safe-area-inset-right, 0px)))'
+        }}
+      >
         <Button
           onClick={handleMuteToggle}
           variant="outline"
           size="icon"
-          className="bg-white/90 backdrop-blur-sm"
+          className="bg-white/90 backdrop-blur-sm touch-manipulation"
         >
           {isMuted ? <VolumeX className="h-4 w-4" /> : <Volume2 className="h-4 w-4" />}
         </Button>
@@ -425,7 +431,7 @@ export function MapScreen({ userId }: MapScreenProps) {
           onClick={handleRecordingToggle}
           variant="outline"
           size="icon"
-          className={`bg-white/90 backdrop-blur-sm ${isRecording ? 'bg-red-100' : ''}`}
+          className={`bg-white/90 backdrop-blur-sm touch-manipulation ${isRecording ? 'bg-red-100' : ''}`}
         >
           {isRecording ? <MicOff className="h-4 w-4" /> : <Mic className="h-4 w-4" />}
         </Button>
@@ -434,7 +440,7 @@ export function MapScreen({ userId }: MapScreenProps) {
           onClick={handleAddMemory}
           variant="outline"
           size="icon"
-          className="bg-white/90 backdrop-blur-sm"
+          className="bg-white/90 backdrop-blur-sm touch-manipulation"
         >
           <Plus className="h-4 w-4" />
         </Button>
