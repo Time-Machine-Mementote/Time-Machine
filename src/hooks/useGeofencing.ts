@@ -41,6 +41,8 @@ export function useGeofencing(options: UseGeofencingOptions = {}) {
   const watchIdRef = useRef<number | null>(null);
   const intervalRef = useRef<NodeJS.Timeout | null>(null);
   const lastCheckRef = useRef<number>(0);
+  const locationRef = useRef<UserLocation | null>(null);
+  const checkNearbyMemoriesRef = useRef<((location: UserLocation) => Promise<void>) | null>(null);
 
   // Update currently playing memory when audio queue changes
   useEffect(() => {
@@ -58,92 +60,16 @@ export function useGeofencing(options: UseGeofencingOptions = {}) {
     return () => clearInterval(checkInterval);
   }, []);
 
-  // Start location tracking
-  const startTracking = useCallback(async () => {
-    if (!enabled || !navigator.geolocation) {
-      setState(prev => ({
-        ...prev,
-        error: 'Geolocation not supported',
-      }));
-      return;
-    }
-
-    try {
-      // Request permissions
-      const permission = await navigator.permissions.query({ name: 'geolocation' as PermissionName });
-      if (permission.state === 'denied') {
-        setState(prev => ({
-          ...prev,
-          error: 'Location permission denied',
-        }));
-        return;
-      }
-
-      // Start watching position
-      watchIdRef.current = navigator.geolocation.watchPosition(
-        (position) => {
-          const newLocation: UserLocation = {
-            lat: position.coords.latitude,
-            lng: position.coords.longitude,
-            accuracy: position.coords.accuracy,
-            timestamp: Date.now(),
-          };
-
-          setState(prev => ({
-            ...prev,
-            location: newLocation,
-            accuracy: position.coords.accuracy,
-            isTracking: true,
-            error: null,
-          }));
-        },
-        (error) => {
-          console.error('Geolocation error:', error);
-          setState(prev => ({
-            ...prev,
-            error: `Location error: ${error.message}`,
-            isTracking: false,
-          }));
-        },
-        {
-          enableHighAccuracy: true,
-          maximumAge: 5000,
-          timeout: 10000,
-        }
-      );
-
-      // Start periodic memory checking
-      intervalRef.current = setInterval(async () => {
-        if (state.location) {
-          await checkNearbyMemories(state.location);
-        }
-      }, finalConfig.sampleInterval);
-
-    } catch (error) {
-      console.error('Failed to start location tracking:', error);
-      setState(prev => ({
-        ...prev,
-        error: 'Failed to start location tracking',
-      }));
-    }
-  }, [enabled, finalConfig.sampleInterval, state.location]);
-
-  // Stop location tracking
-  const stopTracking = useCallback(() => {
-    if (watchIdRef.current !== null) {
-      navigator.geolocation.clearWatch(watchIdRef.current);
-      watchIdRef.current = null;
-    }
-
-    if (intervalRef.current !== null) {
-      clearInterval(intervalRef.current);
-      intervalRef.current = null;
-    }
-
-    setState(prev => ({
-      ...prev,
-      isTracking: false,
-    }));
+  // Calculate distance between two points (Haversine formula)
+  const calculateDistance = useCallback((lat1: number, lng1: number, lat2: number, lng2: number): number => {
+    const R = 6371000; // Earth's radius in meters
+    const dLat = (lat2 - lat1) * Math.PI / 180;
+    const dLng = (lng2 - lng1) * Math.PI / 180;
+    const a = Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+              Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) *
+              Math.sin(dLng / 2) * Math.sin(dLng / 2);
+    const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+    return R * c;
   }, []);
 
   // Check for nearby memories and trigger audio
@@ -207,18 +133,102 @@ export function useGeofencing(options: UseGeofencingOptions = {}) {
     } catch (error) {
       console.error('Failed to check nearby memories:', error);
     }
-  }, [finalConfig.maxDistance, finalConfig.sampleInterval, userId]);
+  }, [finalConfig.maxDistance, finalConfig.sampleInterval, userId, calculateDistance]);
 
-  // Calculate distance between two points (Haversine formula)
-  const calculateDistance = useCallback((lat1: number, lng1: number, lat2: number, lng2: number): number => {
-    const R = 6371000; // Earth's radius in meters
-    const dLat = (lat2 - lat1) * Math.PI / 180;
-    const dLng = (lng2 - lng1) * Math.PI / 180;
-    const a = Math.sin(dLat / 2) * Math.sin(dLat / 2) +
-              Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) *
-              Math.sin(dLng / 2) * Math.sin(dLng / 2);
-    const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
-    return R * c;
+  // Update ref when checkNearbyMemories changes
+  useEffect(() => {
+    checkNearbyMemoriesRef.current = checkNearbyMemories;
+  }, [checkNearbyMemories]);
+
+  // Start location tracking
+  const startTracking = useCallback(async () => {
+    if (!enabled || !navigator.geolocation) {
+      setState(prev => ({
+        ...prev,
+        error: 'Geolocation not supported',
+      }));
+      return;
+    }
+
+    try {
+      // Request permissions
+      const permission = await navigator.permissions.query({ name: 'geolocation' as PermissionName });
+      if (permission.state === 'denied') {
+        setState(prev => ({
+          ...prev,
+          error: 'Location permission denied',
+        }));
+        return;
+      }
+
+      // Start watching position
+      watchIdRef.current = navigator.geolocation.watchPosition(
+        (position) => {
+          const newLocation: UserLocation = {
+            lat: position.coords.latitude,
+            lng: position.coords.longitude,
+            accuracy: position.coords.accuracy,
+            timestamp: Date.now(),
+          };
+
+          locationRef.current = newLocation;
+          setState(prev => ({
+            ...prev,
+            location: newLocation,
+            accuracy: position.coords.accuracy,
+            isTracking: true,
+            error: null,
+          }));
+        },
+        (error) => {
+          console.error('Geolocation error:', error);
+          setState(prev => ({
+            ...prev,
+            error: `Location error: ${error.message}`,
+            isTracking: false,
+          }));
+        },
+        {
+          enableHighAccuracy: true,
+          maximumAge: 5000,
+          timeout: 10000,
+        }
+      );
+
+      // Start periodic memory checking (optimized - only when location exists)
+      intervalRef.current = setInterval(async () => {
+        const currentLocation = locationRef.current;
+        const checkFn = checkNearbyMemoriesRef.current;
+        if (currentLocation && checkFn) {
+          await checkFn(currentLocation);
+        }
+      }, finalConfig.sampleInterval);
+
+    } catch (error) {
+      console.error('Failed to start location tracking:', error);
+      setState(prev => ({
+        ...prev,
+        error: 'Failed to start location tracking',
+      }));
+    }
+  }, [enabled, finalConfig.sampleInterval]);
+
+  // Stop location tracking
+  const stopTracking = useCallback(() => {
+    if (watchIdRef.current !== null) {
+      navigator.geolocation.clearWatch(watchIdRef.current);
+      watchIdRef.current = null;
+    }
+
+    if (intervalRef.current !== null) {
+      clearInterval(intervalRef.current);
+      intervalRef.current = null;
+    }
+
+    setState(prev => ({
+      ...prev,
+      isTracking: false,
+    }));
   }, []);
 
   // Audio controls

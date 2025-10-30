@@ -1,33 +1,23 @@
-// Berkeley Memory Map - Main Map Component
-import React, { useEffect, useRef, useState } from 'react';
+// Berkeley Memory Map - Main Map Component (Optimized)
+import React, { useEffect, useRef, useState, useMemo, useCallback } from 'react';
 import mapboxgl from 'mapbox-gl';
 import 'mapbox-gl/dist/mapbox-gl.css';
 import { useGeofencing } from '@/hooks/useGeofencing';
+import { useMemoryAudio } from '@/hooks/useMemoryAudio';
 import { AddMemorySheet } from '@/components/AddMemorySheet';
 import { NowPlayingChip } from '@/components/NowPlayingChip';
-import { SupabaseTest } from '@/components/SupabaseTest';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
-import { Mic, MicOff, Volume2, VolumeX, SkipForward, Plus } from 'lucide-react';
+import { Mic, MicOff, Volume2, VolumeX, Plus } from 'lucide-react';
 import { BERKELEY_CAMPUS_CENTER, BERKELEY_CAMPUS_ZOOM } from '@/types/memory';
 import type { Memory } from '@/types/memory';
-import { supabase } from '@/integrations/supabase/client';
 
-// Set Mapbox access token
+// Set Mapbox access token (optimized - only log in dev)
 const MAPBOX_TOKEN = import.meta.env.VITE_MAPBOX_TOKEN;
-console.log('Environment check:', {
-  nodeEnv: import.meta.env.MODE,
-  mapboxToken: MAPBOX_TOKEN ? MAPBOX_TOKEN.substring(0, 20) + '...' : 'NOT FOUND',
-  supabaseUrl: import.meta.env.VITE_SUPABASE_URL ? 'Present' : 'Missing',
-  supabaseKey: import.meta.env.VITE_SUPABASE_ANON_KEY ? 'Present' : 'Missing'
-});
-
 if (MAPBOX_TOKEN) {
   mapboxgl.accessToken = MAPBOX_TOKEN;
-  console.log('Mapbox token set successfully');
-} else {
+} else if (import.meta.env.DEV) {
   console.error('Mapbox token not found in environment variables');
-  console.error('Available env vars:', Object.keys(import.meta.env));
 }
 
 interface MapScreenProps {
@@ -37,14 +27,17 @@ interface MapScreenProps {
 export function MapScreen({ userId }: MapScreenProps) {
   const mapContainer = useRef<HTMLDivElement>(null);
   const map = useRef<mapboxgl.Map | null>(null);
+  const markersRef = useRef<Map<string, mapboxgl.Marker>>(new Map());
+  const userMarkerRef = useRef<mapboxgl.Marker | null>(null);
+  const pulseStyleRef = useRef<HTMLStyleElement | null>(null);
+  const lastAccuracyRef = useRef<number | null>(null);
   const [isMapLoaded, setIsMapLoaded] = useState(false);
   const [showAddMemory, setShowAddMemory] = useState(false);
   const [isMuted, setIsMuted] = useState(false);
   const [isRecording, setIsRecording] = useState(false);
-  const [allMemories, setAllMemories] = useState<Memory[]>([]);
-  const [mapError, setMapError] = useState<string | null>(null);
+  const [selectedMemory, setSelectedMemory] = useState<Memory | null>(null);
 
-  // Geofencing hook (disabled for now)
+  // Geofencing hook (lazy load after map loads)
   const {
     location,
     accuracy,
@@ -57,32 +50,73 @@ export function MapScreen({ userId }: MapScreenProps) {
     skip,
     clearQueue,
   } = useGeofencing({
-    enabled: true, // Re-enabled location tracking
+    enabled: isMapLoaded, // Only start tracking after map loads
     userId,
   });
 
-  // Initialize map
-  useEffect(() => {
-    if (!mapContainer.current) {
-      console.error('Map container not found');
-      return;
+  // Memory audio hook for click-to-play functionality
+  const { generateAndPlay, isGenerating, isPlaying, stopPlaying } = useMemoryAudio();
+
+  // Handle memory click - generate and play audio (defined before useEffect)
+  const handleMemoryClick = useCallback(async (memory: Memory) => {
+    setSelectedMemory(memory);
+    
+    // Fly to memory location
+    if (map.current) {
+      map.current.flyTo({
+        center: [memory.lng, memory.lat],
+        zoom: 18,
+        duration: 1000,
+      });
     }
 
-    if (!MAPBOX_TOKEN) {
-      console.error('Mapbox token not found');
-      return;
-    }
+    // Generate and play audio narration
+    await generateAndPlay(memory);
+  }, [generateAndPlay]);
 
-    console.log('Initializing map with token:', MAPBOX_TOKEN.substring(0, 20) + '...');
+  // Add UC Berkeley campus styling (memoized) - defined before useEffect that uses it
+  const addBerkeleyCampusStyle = useCallback(() => {
+    if (!map.current) return;
 
-    console.log('Creating map with config:', {
-      container: mapContainer.current,
-      style: 'mapbox://styles/mapbox/streets-v12',
-      center: BERKELEY_CAMPUS_CENTER,
-      zoom: BERKELEY_CAMPUS_ZOOM,
-      token: MAPBOX_TOKEN ? 'Present' : 'Missing'
+    // Add campus landmarks as custom markers (only once)
+    const landmarks = [
+      { id: 'landmark-campanile', name: 'Campanile', lat: 37.8721, lng: -122.2585, type: 'landmark' },
+      { id: 'landmark-memorial-glade', name: 'Memorial Glade', lat: 37.8719, lng: -122.2585, type: 'landmark' },
+      { id: 'landmark-doe-library', name: 'Doe Library', lat: 37.8723, lng: -122.2587, type: 'building' },
+      { id: 'landmark-sproul-plaza', name: 'Sproul Plaza', lat: 37.8696, lng: -122.2593, type: 'plaza' },
+      { id: 'landmark-sather-gate', name: 'Sather Gate', lat: 37.8696, lng: -122.2593, type: 'gate' },
+    ];
+
+    landmarks.forEach(landmark => {
+      // Skip if already added
+      if (markersRef.current.has(landmark.id)) return;
+
+      const el = document.createElement('div');
+      el.className = 'campus-landmark';
+      el.style.cssText = `
+        width: 20px;
+        height: 20px;
+        border-radius: 50%;
+        background-color: ${landmark.type === 'landmark' ? '#1f2937' : '#3b82f6'};
+        border: 2px solid white;
+        box-shadow: 0 2px 4px rgba(0,0,0,0.2);
+        cursor: pointer;
+      `;
+
+      const marker = new mapboxgl.Marker(el)
+        .setLngLat([landmark.lng, landmark.lat])
+        .setPopup(new mapboxgl.Popup().setHTML(`<strong>${landmark.name}</strong>`))
+        .addTo(map.current!);
+      
+      markersRef.current.set(landmark.id, marker);
     });
+  }, []);
 
+  // Initialize map (optimized - faster loading)
+  useEffect(() => {
+    if (!mapContainer.current || !MAPBOX_TOKEN) return;
+
+    // Create map with performance optimizations
     map.current = new mapboxgl.Map({
       container: mapContainer.current,
       style: 'mapbox://styles/mapbox/streets-v12',
@@ -90,170 +124,214 @@ export function MapScreen({ userId }: MapScreenProps) {
       zoom: BERKELEY_CAMPUS_ZOOM,
       pitch: 0,
       bearing: 0,
+      antialias: false, // Better performance
+      fadeDuration: 0, // Instant transitions
     });
+
+    // Set up pulse animation once (not on every render)
+    if (!pulseStyleRef.current) {
+      const style = document.createElement('style');
+      style.textContent = `
+        @keyframes pulse {
+          0% { transform: scale(1); opacity: 1; }
+          50% { transform: scale(1.2); opacity: 0.7; }
+          100% { transform: scale(1); opacity: 1; }
+        }
+      `;
+      document.head.appendChild(style);
+      pulseStyleRef.current = style;
+    }
 
     map.current.on('load', () => {
-      console.log('Map loaded successfully');
       setIsMapLoaded(true);
+      // Defer non-critical operations
+      if ('requestIdleCallback' in window) {
+        requestIdleCallback(() => {
+          addBerkeleyCampusStyle();
+        }, { timeout: 1000 });
+      } else {
+        setTimeout(addBerkeleyCampusStyle, 100);
+      }
     });
 
-        map.current.on('error', (e) => {
-          console.error('Map error:', e);
-          console.error('Mapbox token status:', MAPBOX_TOKEN ? 'Present' : 'Missing');
-          console.error('Error details:', e.error);
-          setMapError(`Map failed to load: ${e.error?.message || 'Unknown error'}`);
-        });
+    map.current.on('error', (e) => {
+      if (import.meta.env.DEV) console.error('Map error:', e);
+    });
 
     return () => {
+      // Cleanup markers
+      markersRef.current.forEach(marker => marker.remove());
+      markersRef.current.clear();
+      if (userMarkerRef.current) {
+        userMarkerRef.current.remove();
+        userMarkerRef.current = null;
+      }
       if (map.current) {
         map.current.remove();
       }
     };
-  }, []);
+  }, [addBerkeleyCampusStyle]);
 
-  // Load all memories from database
+  // Update user location marker (optimized - update existing marker instead of recreating)
   useEffect(() => {
-    const loadAllMemories = async () => {
-      try {
-        console.log('Loading all memories from database...');
-        console.log('Supabase URL:', import.meta.env.VITE_SUPABASE_URL);
-        console.log('Supabase Key:', import.meta.env.VITE_SUPABASE_ANON_KEY ? 'Present' : 'Missing');
-        
-        // Test basic Supabase connection
-        console.log('Testing Supabase connection...');
-        const { data: testData, error: testError } = await supabase
-          .from('_supabase_migrations')
-          .select('*')
-          .limit(1);
-        
-        console.log('Connection test result:', { testData, testError });
-        
-        // Check authentication status
-        const { data: { session } } = await supabase.auth.getSession();
-        console.log('Current session:', session);
-        
-        // Try a simple count query first
-        const { count, error: countError } = await supabase
-          .from('memories')
-          .select('*', { count: 'exact', head: true });
-        
-        console.log('Memory count:', count);
-        console.log('Count error:', countError);
-        
-        const { data, error } = await supabase
-          .from('memories')
-          .select('*')
-          .limit(50); // Limit to first 50 memories
+    if (!map.current || !location || !isMapLoaded) return;
+    
+    // Validate location coordinates
+    if (typeof location.lng !== 'number' || typeof location.lat !== 'number' ||
+        isNaN(location.lng) || isNaN(location.lat)) {
+      return;
+    }
 
-        if (error) {
-          console.error('Error loading memories:', error);
-          console.error('Error details:', error.message, error.code, error.hint);
-          return;
-        }
+    if (!userMarkerRef.current) {
+      const el = document.createElement('div');
+      el.className = 'user-location-marker';
+      el.style.cssText = `
+        width: 16px;
+        height: 16px;
+        border-radius: 50%;
+        background-color: #10b981;
+        border: 3px solid white;
+        box-shadow: 0 2px 8px rgba(0,0,0,0.3);
+        animation: pulse 2s infinite;
+      `;
 
-        console.log('Loaded memories from database:', data);
-        console.log('Number of memories loaded:', data?.length || 0);
-        setAllMemories(data || []);
-      } catch (err) {
-        console.error('Failed to load memories:', err);
+      userMarkerRef.current = new mapboxgl.Marker(el);
+      // Only add to map if we have valid coordinates
+      if (typeof location.lng === 'number' && typeof location.lat === 'number' &&
+          !isNaN(location.lng) && !isNaN(location.lat)) {
+        userMarkerRef.current.setLngLat([location.lng, location.lat]).addTo(map.current);
       }
-    };
+    }
 
-    loadAllMemories();
-  }, []);
+    // Update position (much faster than recreating) - only if marker exists and has valid coordinates
+    if (userMarkerRef.current && typeof location.lng === 'number' && typeof location.lat === 'number' &&
+        !isNaN(location.lng) && !isNaN(location.lat)) {
+      userMarkerRef.current.setLngLat([location.lng, location.lat]);
+      
+      // Ensure marker is added to map if it wasn't before
+      if (!userMarkerRef.current._map) {
+        userMarkerRef.current.addTo(map.current!);
+      }
+    }
+    
+    // Update popup only if accuracy changed significantly
+    if (accuracy) {
+      const shouldUpdate = !lastAccuracyRef.current || Math.abs(accuracy - lastAccuracyRef.current) > 5;
+      if (shouldUpdate) {
+        userMarkerRef.current.setPopup(new mapboxgl.Popup().setHTML(`
+          <div>
+            <strong>Your Location</strong><br>
+            Accuracy: ${Math.round(accuracy)}m
+          </div>
+        `));
+        lastAccuracyRef.current = accuracy;
+      }
+    }
+  }, [location, accuracy, isMapLoaded]);
 
-  // Update memory markers
+  // Update memory markers (optimized - batch updates, reuse existing markers)
   useEffect(() => {
     if (!map.current || !isMapLoaded) return;
 
-    // Remove existing memory markers more thoroughly
-    const existingMarkers = document.querySelectorAll('.memory-marker');
-    existingMarkers.forEach(marker => marker.remove());
+    const memoryIds = new Set(nearbyMemories.map(m => m.id));
     
-    // Also remove any markers that might be attached to the map
-    if (map.current) {
-      const mapMarkers = map.current.getContainer().querySelectorAll('.mapboxgl-marker');
-      mapMarkers.forEach(marker => marker.remove());
+    // Remove markers that are no longer nearby
+    for (const [id, marker] of markersRef.current.entries()) {
+      if (!memoryIds.has(id) && !id.startsWith('landmark-')) {
+        marker.remove();
+        markersRef.current.delete(id);
+      }
     }
 
-    console.log('All memories from database:', allMemories);
-    console.log('Memory IDs:', allMemories.map(m => m.id));
-    console.log('Memory summaries:', allMemories.map(m => m.summary));
+    // Batch marker updates using requestAnimationFrame
+    requestAnimationFrame(() => {
+      nearbyMemories.forEach(memory => {
+        // Skip if marker already exists
+        if (markersRef.current.has(memory.id)) return;
+        
+        // Validate memory has valid coordinates
+        if (!memory || typeof memory.lng !== 'number' || typeof memory.lat !== 'number' ||
+            isNaN(memory.lng) || isNaN(memory.lat)) {
+          console.warn('Skipping memory with invalid coordinates:', memory);
+          return;
+        }
 
-    // Deduplicate memories by summary to prevent showing the same memory multiple times
-    const uniqueMemories = allMemories.reduce((acc, memory) => {
-      if (!acc.find(m => m.summary === memory.summary)) {
-        acc.push(memory);
-      } else {
-        console.log('Duplicate found by summary:', memory.summary);
-      }
-      return acc;
-    }, [] as Memory[]);
+        const el = document.createElement('div');
+        el.className = 'memory-marker';
+        el.style.cssText = `
+          width: 12px;
+          height: 12px;
+          border-radius: 50%;
+          background-color: ${memory.privacy === 'private' ? '#ef4444' : 
+                            memory.privacy === 'friends' ? '#f59e0b' : '#8b5cf6'};
+          border: 2px solid white;
+          box-shadow: 0 2px 4px rgba(0,0,0,0.2);
+          cursor: pointer;
+        `;
 
-    console.log('Unique memories after deduplication:', uniqueMemories.length);
-    console.log('Unique memory summaries:', uniqueMemories.map(m => m.summary));
+        const marker = new mapboxgl.Marker(el)
+          .setLngLat([memory.lng, memory.lat])
+          .setPopup(new mapboxgl.Popup().setHTML(`
+            <div class="p-2">
+              <strong>${memory.summary || 'Memory'}</strong><br>
+              <small>${memory.place_name || 'Unknown location'}</small><br>
+              <small>Radius: ${memory.radius_m}m</small><br>
+              <button class="mt-2 px-3 py-1 bg-blue-500 text-white rounded text-xs hover:bg-blue-600">
+                Play Memory
+              </button>
+            </div>
+          `))
+          .addTo(map.current!);
 
-    // Add new memory markers (show ALL memories, not just nearby ones)
-    uniqueMemories.forEach((memory, index) => {
-      console.log(`Creating marker ${index + 1} for:`, memory.summary, 'at', [memory.lng, memory.lat]);
-      
-      const el = document.createElement('div');
-      el.className = 'memory-marker';
-      el.style.cssText = `
-        width: 12px;
-        height: 12px;
-        border-radius: 50%;
-        background-color: ${memory.privacy === 'private' ? '#ef4444' : 
-                          memory.privacy === 'friends' ? '#f59e0b' : '#8b5cf6'};
-        border: 2px solid white;
-        box-shadow: 0 2px 4px rgba(0,0,0,0.2);
-        cursor: pointer;
-        position: absolute;
-        transform: translate(-50%, -50%);
-        pointer-events: auto;
-      `;
-
-      const marker = new mapboxgl.Marker({
-        element: el,
-        anchor: 'center'
-      })
-        .setLngLat([memory.lng, memory.lat])
-        .setPopup(new mapboxgl.Popup().setHTML(`
-          <div class="p-2">
-            <strong>${memory.summary || 'Memory'}</strong><br>
-            <small>${memory.place_name || 'Unknown location'}</small><br>
-            <small>Radius: ${memory.radius_m}m</small>
-          </div>
-        `))
-        .addTo(map.current!);
-
-      // Add click handler
-      el.addEventListener('click', () => {
-        // Center map on memory
-        map.current?.flyTo({
-          center: [memory.lng, memory.lat],
-          zoom: 18,
+        // Add click handler for marker
+        el.addEventListener('click', (e) => {
+          e.stopPropagation();
+          handleMemoryClick(memory);
         });
+
+        // Add click handler for popup button
+        marker.getPopup().on('open', () => {
+          const popupElement = marker.getPopup().getElement();
+          if (popupElement) {
+            const playButton = popupElement.querySelector('button');
+            if (playButton) {
+              playButton.addEventListener('click', (e) => {
+                e.stopPropagation();
+                handleMemoryClick(memory);
+              });
+            }
+          }
+        });
+
+        markersRef.current.set(memory.id, marker);
       });
     });
-  }, [allMemories, isMapLoaded]);
+  }, [nearbyMemories, isMapLoaded, handleMemoryClick]);
 
-  // Handle mute toggle
-  const handleMuteToggle = () => {
+  // Memoized handlers
+  const handleMuteToggle = useCallback(() => {
     if (isMuted) {
       unmute();
       setIsMuted(false);
     } else {
       mute();
       setIsMuted(true);
+      // Also stop the memory audio if playing
+      stopPlaying();
     }
-  };
+  }, [isMuted, mute, unmute, stopPlaying]);
 
-  // Handle recording toggle
-  const handleRecordingToggle = () => {
+  const handleRecordingToggle = useCallback(() => {
     setIsRecording(!isRecording);
-    // TODO: Implement voice recording
-  };
+  }, [isRecording]);
+
+  const handleAddMemory = useCallback(() => {
+    setShowAddMemory(true);
+  }, []);
+
+  const handleCloseMemory = useCallback(() => {
+    setShowAddMemory(false);
+  }, []);
 
   return (
     <div className="relative w-full h-screen">
@@ -265,16 +343,11 @@ export function MapScreen({ userId }: MapScreenProps) {
         <div className="absolute inset-0 flex items-center justify-center bg-gray-100">
           <div className="text-center">
             <div className="text-lg font-semibold text-gray-700 mb-2">
-              {mapError ? 'Map Loading Error' : MAPBOX_TOKEN ? 'Loading Berkeley Memory Map...' : 'Mapbox token not configured'}
+              {MAPBOX_TOKEN ? 'Loading Berkeley Memory Map...' : 'Mapbox token not configured'}
             </div>
             <div className="text-sm text-gray-500">
-              {mapError ? mapError : MAPBOX_TOKEN ? 'Please wait while the map loads' : 'Please check your environment variables'}
+              {MAPBOX_TOKEN ? 'Please wait while the map loads' : 'Please check your environment variables'}
             </div>
-            {mapError && (
-              <div className="mt-4 p-3 bg-red-50 rounded text-sm text-red-700">
-                Check browser console for more details. This is likely due to missing environment variables in production.
-              </div>
-            )}
           </div>
         </div>
       )}
@@ -284,27 +357,72 @@ export function MapScreen({ userId }: MapScreenProps) {
         <Card className="p-3 bg-white/90 backdrop-blur-sm">
           <div className="flex items-center justify-between">
             <div className="flex items-center space-x-2">
-              <div className="w-2 h-2 rounded-full bg-blue-500" />
+              <div className={`w-2 h-2 rounded-full ${isTracking ? 'bg-green-500' : 'bg-red-500'}`} />
               <span className="text-sm font-medium">
-                Showing {allMemories.length} memories
+                {isTracking ? 'Tracking' : 'Not tracking'}
               </span>
+              {accuracy && (
+                <span className="text-xs text-gray-500">
+                  ±{Math.round(accuracy)}m
+                </span>
+              )}
             </div>
+            
+            {error && (
+              <div className="text-xs text-red-600">
+                {error}
+              </div>
+            )}
           </div>
         </Card>
       </div>
 
-      {/* Now Playing Chip */}
+      {/* Now Playing Chip - Geofencing */}
       {currentlyPlaying && (
         <NowPlayingChip memory={currentlyPlaying} onSkip={skip} />
       )}
 
-      {/* Control Panel */}
-      <div className="absolute bottom-4 right-4 z-10 space-y-2">
+      {/* Memory Audio Player - Click-to-play */}
+      {selectedMemory && (isGenerating || isPlaying) && (
+        <div className="absolute bottom-20 left-4 z-10">
+          <Card className="p-4 bg-white/90 backdrop-blur-sm min-w-[300px]">
+            <div className="flex items-center justify-between gap-3">
+              <div className="flex-1 min-w-0">
+                <div className="text-sm font-medium truncate">
+                  {selectedMemory.summary || 'Memory'}
+                </div>
+                <div className="text-xs text-muted-foreground">
+                  {isGenerating ? 'Generating audio...' : isPlaying ? 'Playing...' : 'Ready'}
+                </div>
+              </div>
+              {isPlaying && (
+                <Button
+                  onClick={stopPlaying}
+                  variant="ghost"
+                  size="sm"
+                  className="shrink-0"
+                >
+                  <VolumeX className="h-4 w-4" />
+                </Button>
+              )}
+            </div>
+          </Card>
+        </div>
+      )}
+
+      {/* Control Panel - Mobile-friendly with safe area insets */}
+      <div 
+        className="absolute z-10 space-y-2 bottom-4 right-4 sm:bottom-4 sm:right-4"
+        style={{
+          bottom: 'max(1.5rem, calc(1rem + env(safe-area-inset-bottom, 0px)))',
+          right: 'max(1.5rem, calc(1rem + env(safe-area-inset-right, 0px)))'
+        }}
+      >
         <Button
           onClick={handleMuteToggle}
           variant="outline"
           size="icon"
-          className="bg-white/90 backdrop-blur-sm"
+          className="bg-white/90 backdrop-blur-sm touch-manipulation"
         >
           {isMuted ? <VolumeX className="h-4 w-4" /> : <Volume2 className="h-4 w-4" />}
         </Button>
@@ -313,30 +431,27 @@ export function MapScreen({ userId }: MapScreenProps) {
           onClick={handleRecordingToggle}
           variant="outline"
           size="icon"
-          className={`bg-white/90 backdrop-blur-sm ${isRecording ? 'bg-red-100' : ''}`}
+          className={`bg-white/90 backdrop-blur-sm touch-manipulation ${isRecording ? 'bg-red-100' : ''}`}
         >
           {isRecording ? <MicOff className="h-4 w-4" /> : <Mic className="h-4 w-4" />}
         </Button>
 
         <Button
-          onClick={() => setShowAddMemory(true)}
+          onClick={handleAddMemory}
           variant="outline"
           size="icon"
-          className="bg-white/90 backdrop-blur-sm"
+          className="bg-white/90 backdrop-blur-sm touch-manipulation"
         >
           <Plus className="h-4 w-4" />
         </Button>
       </div>
 
-      {/* Supabase Integration Test */}
-      <SupabaseTest />
-
       {/* Add Memory Sheet */}
       {showAddMemory && (
         <AddMemorySheet
           isOpen={showAddMemory}
-          onClose={() => setShowAddMemory(false)}
-          userLocation={location ? { lat: location.lat, lng: location.lng, accuracy, timestamp: Date.now() } : null}
+          onClose={handleCloseMemory}
+          userLocation={location}
           userId={userId}
         />
       )}
