@@ -33,10 +33,12 @@ const App = () => {
         <Toaster />
         <Sonner />
         <BrowserRouter>
+          <AuthGuard>
           <Routes>
             <Route path="/" element={<MapScreen userId={user?.id} />} />
             <Route path="*" element={<NotFound />} />
           </Routes>
+          </AuthGuard>
         </BrowserRouter>
       </TooltipProvider>
     </>

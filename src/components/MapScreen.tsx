@@ -5,7 +5,6 @@ import 'mapbox-gl/dist/mapbox-gl.css';
 import { useGeofencing } from '@/hooks/useGeofencing';
 import { AddMemorySheet } from '@/components/AddMemorySheet';
 import { NowPlayingChip } from '@/components/NowPlayingChip';
-import { SupabaseTest } from '@/components/SupabaseTest';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { Mic, MicOff, Volume2, VolumeX, SkipForward, Plus } from 'lucide-react';
@@ -304,8 +303,6 @@ export function MapScreen({ userId }: MapScreenProps) {
         </Button>
       </div>
 
-      {/* Supabase Integration Test */}
-      <SupabaseTest />
 
       {/* Add Memory Sheet */}
       {showAddMemory && (
