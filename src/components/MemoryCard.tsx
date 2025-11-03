@@ -136,9 +136,9 @@ const MemoryCard = ({ entry, onToggleFavorite }: MemoryCardProps) => {
           </div>
 
           {/* Media Preview */}
-          {entry.media_files && (entry.media_files as any[]).length > 0 && (
+          {entry.media_files && Array.isArray(entry.media_files) && entry.media_files.length > 0 && (
             <div className="flex gap-2 overflow-x-auto">
-              {(entry.media_files as any[]).slice(0, 3).map((file: any) => (
+              {entry.media_files.slice(0, 3).map((file: { id: string; url?: string; name?: string }) => (
                 <div key={file.id} className="shrink-0">
                   {file.url ? (
                     <img
@@ -153,9 +153,9 @@ const MemoryCard = ({ entry, onToggleFavorite }: MemoryCardProps) => {
                   )}
                 </div>
               ))}
-              {(entry.media_files as any[]).length > 3 && (
+              {Array.isArray(entry.media_files) && entry.media_files.length > 3 && (
                 <div className="w-16 h-16 bg-muted rounded-lg border flex items-center justify-center text-xs text-muted-foreground">
-                  +{(entry.media_files as any[]).length - 3}
+                  +{entry.media_files.length - 3}
                 </div>
               )}
             </div>

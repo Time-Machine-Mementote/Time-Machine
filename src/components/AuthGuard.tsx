@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react'
 import { supabase } from '../integrations/supabase/client'
+import type { User } from '@supabase/supabase-js'
 import { Button } from './ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from './ui/card'
 import { Input } from './ui/input'
@@ -12,7 +13,7 @@ interface AuthGuardProps {
 }
 
 export function AuthGuard({ children }: AuthGuardProps) {
-  const [user, setUser] = useState<any>(null)
+  const [user, setUser] = useState<User | null>(null)
   const [loading, setLoading] = useState(true)
   const [isSignUp, setIsSignUp] = useState(false)
   const [email, setEmail] = useState('')
@@ -62,8 +63,8 @@ export function AuthGuard({ children }: AuthGuardProps) {
         if (error) throw error
         toast.success('Welcome back!')
       }
-    } catch (error: any) {
-      toast.error(error.message)
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : 'An error occurred')
     } finally {
       setAuthLoading(false)
     }
