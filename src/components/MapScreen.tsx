@@ -8,8 +8,10 @@ import { AddMemorySheet } from '@/components/AddMemorySheet';
 import { NowPlayingChip } from '@/components/NowPlayingChip';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
-import { Mic, MicOff, Volume2, VolumeX, Plus } from 'lucide-react';
+import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { Mic, MicOff, Volume2, VolumeX, Plus, Layers, MapPin, Headphones } from 'lucide-react';
 import { BERKELEY_CAMPUS_CENTER, BERKELEY_CAMPUS_ZOOM } from '@/types/memory';
+import { getAllPublicMemories } from '@/services/memoryApi';
 import type { Memory } from '@/types/memory';
 
 // Set Mapbox access token (optimized - only log in dev)
@@ -36,8 +38,12 @@ export function MapScreen({ userId }: MapScreenProps) {
   const [isMuted, setIsMuted] = useState(false);
   const [isRecording, setIsRecording] = useState(false);
   const [selectedMemory, setSelectedMemory] = useState<Memory | null>(null);
+  const [showHeatmap, setShowHeatmap] = useState(false);
+  const [mode, setMode] = useState<'input' | 'output'>('output');
+  const [allMemories, setAllMemories] = useState<Memory[]>([]);
+  const [pickedLocation, setPickedLocation] = useState<{ lat: number; lng: number } | null>(null);
 
-  // Geofencing hook (lazy load after map loads)
+  // Geofencing hook (only enabled in output mode)
   const {
     location,
     accuracy,
@@ -49,8 +55,9 @@ export function MapScreen({ userId }: MapScreenProps) {
     unmute,
     skip,
     clearQueue,
+    calculateDistance,
   } = useGeofencing({
-    enabled: isMapLoaded, // Only start tracking after map loads
+    enabled: isMapLoaded && mode === 'output', // Only start tracking in output mode
     userId,
   });
 
@@ -103,7 +110,10 @@ export function MapScreen({ userId }: MapScreenProps) {
         cursor: pointer;
       `;
 
-      const marker = new mapboxgl.Marker(el)
+      const marker = new mapboxgl.Marker({
+        element: el,
+        anchor: 'center'
+      })
         .setLngLat([landmark.lng, landmark.lat])
         .setPopup(new mapboxgl.Popup().setHTML(`<strong>${landmark.name}</strong>`))
         .addTo(map.current!);
@@ -128,7 +138,7 @@ export function MapScreen({ userId }: MapScreenProps) {
       fadeDuration: 0, // Instant transitions
     });
 
-    // Set up pulse animation once (not on every render)
+    // Set up pulse animations for memory markers within range
     if (!pulseStyleRef.current) {
       const style = document.createElement('style');
       style.textContent = `
@@ -136,6 +146,33 @@ export function MapScreen({ userId }: MapScreenProps) {
           0% { transform: scale(1); opacity: 1; }
           50% { transform: scale(1.2); opacity: 0.7; }
           100% { transform: scale(1); opacity: 1; }
+        }
+        @keyframes memoryPulse {
+          0% { 
+            transform: scale(1); 
+            box-shadow: 0 0 0 0 rgba(139, 92, 246, 0.7);
+          }
+          50% { 
+            transform: scale(1.3); 
+            box-shadow: 0 0 0 10px rgba(139, 92, 246, 0);
+          }
+          100% { 
+            transform: scale(1); 
+            box-shadow: 0 0 0 0 rgba(139, 92, 246, 0);
+          }
+        }
+        .memory-marker-active {
+          animation: memoryPulse 2s infinite;
+          z-index: 1000;
+        }
+        .memory-marker-glow {
+          position: absolute;
+          width: 40px;
+          height: 40px;
+          border-radius: 50%;
+          background: radial-gradient(circle, rgba(139, 92, 246, 0.3) 0%, transparent 70%);
+          pointer-events: none;
+          animation: memoryPulse 2s infinite;
         }
       `;
       document.head.appendChild(style);
@@ -158,6 +195,42 @@ export function MapScreen({ userId }: MapScreenProps) {
       if (import.meta.env.DEV) console.error('Map error:', e);
     });
 
+    // Handle map clicks in input mode
+    const handleMapClick = (e: mapboxgl.MapMouseEvent) => {
+      if (mode === 'input') {
+        const { lng, lat } = e.lngLat;
+        setPickedLocation({ lat, lng });
+        // Show visual feedback - add temporary marker
+        if (pickedLocation) {
+          // Remove previous picked location marker if exists
+          const existingMarker = markersRef.current.get('picked-location');
+          if (existingMarker) {
+            existingMarker.remove();
+          }
+        }
+        // Add new marker for picked location
+        const el = document.createElement('div');
+        el.style.cssText = `
+          width: 20px;
+          height: 20px;
+          border-radius: 50%;
+          background-color: #ef4444;
+          border: 3px solid white;
+          box-shadow: 0 2px 8px rgba(0,0,0,0.3);
+          cursor: pointer;
+        `;
+        const marker = new mapboxgl.Marker({
+          element: el,
+          anchor: 'center'
+        })
+          .setLngLat([lng, lat])
+          .addTo(map.current!);
+        markersRef.current.set('picked-location', marker);
+      }
+    };
+
+    map.current.on('click', handleMapClick);
+
     return () => {
       // Cleanup markers
       markersRef.current.forEach(marker => marker.remove());
@@ -167,10 +240,11 @@ export function MapScreen({ userId }: MapScreenProps) {
         userMarkerRef.current = null;
       }
       if (map.current) {
+        map.current.off('click', handleMapClick);
         map.current.remove();
       }
     };
-  }, [addBerkeleyCampusStyle]);
+  }, [addBerkeleyCampusStyle, mode]);
 
   // Update user location marker (optimized - update existing marker instead of recreating)
   useEffect(() => {
@@ -195,7 +269,10 @@ export function MapScreen({ userId }: MapScreenProps) {
         animation: pulse 2s infinite;
       `;
 
-      userMarkerRef.current = new mapboxgl.Marker(el);
+      userMarkerRef.current = new mapboxgl.Marker({
+        element: el,
+        anchor: 'center'
+      });
       // Only add to map if we have valid coordinates
       if (typeof location.lng === 'number' && typeof location.lat === 'number' &&
           !isNaN(location.lng) && !isNaN(location.lat)) {
@@ -229,11 +306,57 @@ export function MapScreen({ userId }: MapScreenProps) {
     }
   }, [location, accuracy, isMapLoaded]);
 
-  // Update memory markers (optimized - batch updates, reuse existing markers)
+  // Fetch all public memories when in output mode
+  useEffect(() => {
+    if (mode === 'output' && isMapLoaded) {
+      getAllPublicMemories().then(memories => {
+        setAllMemories(memories);
+      }).catch(error => {
+        console.error('Failed to fetch memories:', error);
+      });
+    } else {
+      // Clear memories when switching to input mode
+      setAllMemories([]);
+    }
+  }, [mode, isMapLoaded]);
+
+  // Update memory markers with pulsing animations when within range
   useEffect(() => {
     if (!map.current || !isMapLoaded) return;
+    
+    // In output mode, show all memories or nearby memories
+    // In input mode, don't show memory markers
+    if (mode === 'input') {
+      // Remove all memory markers in input mode
+      for (const [id, marker] of markersRef.current.entries()) {
+        if (!id.startsWith('landmark-')) {
+          marker.remove();
+          markersRef.current.delete(id);
+        }
+      }
+      return;
+    }
 
-    const memoryIds = new Set(nearbyMemories.map(m => m.id));
+    // Use allMemories in output mode, or nearbyMemories if location is available
+    const memoriesToShow = location && nearbyMemories.length > 0 ? nearbyMemories : allMemories;
+    
+    if (!location && memoriesToShow.length === 0) return;
+
+    const memoryIds = new Set(memoriesToShow.map(m => m.id));
+    
+    // Calculate which memories are within 20m for pulsing (only if location available)
+    const activeMemoryIds = new Set<string>();
+    if (location) {
+      memoriesToShow.forEach(memory => {
+        const dist = calculateDistance(
+          location.lat, location.lng,
+          memory.lat, memory.lng
+        );
+        if (dist <= 20) { // Within 20m radius
+          activeMemoryIds.add(memory.id);
+        }
+      });
+    }
     
     // Remove markers that are no longer nearby
     for (const [id, marker] of markersRef.current.entries()) {
@@ -245,9 +368,56 @@ export function MapScreen({ userId }: MapScreenProps) {
 
     // Batch marker updates using requestAnimationFrame
     requestAnimationFrame(() => {
-      nearbyMemories.forEach(memory => {
-        // Skip if marker already exists
-        if (markersRef.current.has(memory.id)) return;
+      memoriesToShow.forEach(memory => {
+        const isActive = activeMemoryIds.has(memory.id);
+        const isCurrentlyPlaying = currentlyPlaying?.id === memory.id;
+        
+        // Update existing marker or create new one
+        if (markersRef.current.has(memory.id)) {
+          const existingMarker = markersRef.current.get(memory.id);
+          const existingContainer = existingMarker?.getElement();
+          if (existingContainer) {
+            // Find the inner marker element
+            const existingEl = existingContainer.querySelector('.memory-marker') as HTMLElement;
+            const existingGlow = existingContainer.querySelector('.memory-marker-glow');
+            
+            // Update animation based on active state
+            if (isActive || isCurrentlyPlaying) {
+              if (existingEl) {
+                existingEl.classList.add('memory-marker-active');
+                existingEl.style.boxShadow = '0 0 20px rgba(139, 92, 246, 0.8)';
+              }
+              // Add glow if not present
+              if (!existingGlow) {
+                const glow = document.createElement('div');
+                glow.className = 'memory-marker-glow';
+                glow.style.cssText = `
+                  position: absolute;
+                  top: 50%;
+                  left: 50%;
+                  transform: translate(-50%, -50%);
+                  width: 40px;
+                  height: 40px;
+                  border-radius: 50%;
+                  background: radial-gradient(circle, rgba(139, 92, 246, 0.4) 0%, transparent 70%);
+                  pointer-events: none;
+                  animation: memoryPulse 2s infinite;
+                `;
+                existingContainer.appendChild(glow);
+              }
+            } else {
+              if (existingEl) {
+                existingEl.classList.remove('memory-marker-active');
+                existingEl.style.boxShadow = '0 2px 4px rgba(0,0,0,0.2)';
+              }
+              // Remove glow
+              if (existingGlow) {
+                existingGlow.remove();
+              }
+            }
+          }
+          return;
+        }
         
         // Validate memory has valid coordinates
         if (!memory || typeof memory.lng !== 'number' || typeof memory.lat !== 'number' ||
@@ -256,20 +426,52 @@ export function MapScreen({ userId }: MapScreenProps) {
           return;
         }
 
+        // Create marker container with glow effect
+        const container = document.createElement('div');
+        container.style.cssText = 'position: relative; width: 40px; height: 40px; margin: 0; padding: 0; transform-origin: center center;';
+        
+        // Glow effect (only when active)
+        if (isActive || isCurrentlyPlaying) {
+          const glow = document.createElement('div');
+          glow.className = 'memory-marker-glow';
+          glow.style.cssText = `
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            width: 40px;
+            height: 40px;
+            border-radius: 50%;
+            background: radial-gradient(circle, rgba(139, 92, 246, 0.4) 0%, transparent 70%);
+            pointer-events: none;
+            animation: memoryPulse 2s infinite;
+          `;
+          container.appendChild(glow);
+        }
+        
         const el = document.createElement('div');
-        el.className = 'memory-marker';
+        el.className = isActive || isCurrentlyPlaying ? 'memory-marker memory-marker-active' : 'memory-marker';
         el.style.cssText = `
-          width: 12px;
-          height: 12px;
+          position: absolute;
+          top: 50%;
+          left: 50%;
+          transform: translate(-50%, -50%);
+          width: 16px;
+          height: 16px;
           border-radius: 50%;
           background-color: ${memory.privacy === 'private' ? '#ef4444' : 
                             memory.privacy === 'friends' ? '#f59e0b' : '#8b5cf6'};
-          border: 2px solid white;
-          box-shadow: 0 2px 4px rgba(0,0,0,0.2);
+          border: 3px solid white;
+          box-shadow: ${isActive || isCurrentlyPlaying ? '0 0 20px rgba(139, 92, 246, 0.8)' : '0 2px 4px rgba(0,0,0,0.2)'};
           cursor: pointer;
+          z-index: 10;
         `;
+        container.appendChild(el);
 
-        const marker = new mapboxgl.Marker(el)
+        const marker = new mapboxgl.Marker({
+          element: container,
+          anchor: 'center'
+        })
           .setLngLat([memory.lng, memory.lat])
           .setPopup(new mapboxgl.Popup().setHTML(`
             <div class="p-2">
@@ -285,6 +487,12 @@ export function MapScreen({ userId }: MapScreenProps) {
 
         // Add click handler for marker
         el.addEventListener('click', (e) => {
+          e.stopPropagation();
+          handleMemoryClick(memory);
+        });
+        
+        // Also allow clicking the glow/container
+        container.addEventListener('click', (e) => {
           e.stopPropagation();
           handleMemoryClick(memory);
         });
@@ -306,7 +514,136 @@ export function MapScreen({ userId }: MapScreenProps) {
         markersRef.current.set(memory.id, marker);
       });
     });
-  }, [nearbyMemories, isMapLoaded, handleMemoryClick]);
+  }, [mode, allMemories, nearbyMemories, isMapLoaded, location, currentlyPlaying, calculateDistance, handleMemoryClick]);
+
+  // Memory density heatmap layer (only in output mode)
+  useEffect(() => {
+    if (!map.current || !isMapLoaded || mode !== 'output') return;
+
+    const heatmapSourceId = 'memory-heatmap';
+    const heatmapLayerId = 'memory-heatmap-layer';
+    const currentMap = map.current; // Store reference
+
+    // Create GeoJSON from nearby memories
+    const geojson = {
+      type: 'FeatureCollection' as const,
+      features: allMemories.map(memory => ({
+        type: 'Feature' as const,
+        geometry: {
+          type: 'Point' as const,
+          coordinates: [memory.lng, memory.lat],
+        },
+        properties: {
+          intensity: memory.emotion || 0.5,
+        },
+      })),
+    };
+
+    // Remove existing source and layer if they exist
+    try {
+      if (currentMap.getLayer && currentMap.getLayer(heatmapLayerId)) {
+        currentMap.removeLayer(heatmapLayerId);
+      }
+      if (currentMap.getSource && currentMap.getSource(heatmapSourceId)) {
+        currentMap.removeSource(heatmapSourceId);
+      }
+    } catch (error) {
+      console.warn('Error removing existing heatmap layer:', error);
+    }
+
+    if (showHeatmap && allMemories.length > 0) {
+      try {
+        // Add heatmap source
+        currentMap.addSource(heatmapSourceId, {
+          type: 'geojson',
+          data: geojson,
+        });
+
+        // Add heatmap layer
+        currentMap.addLayer({
+          id: heatmapLayerId,
+          type: 'heatmap',
+          source: heatmapSourceId,
+          maxzoom: 15,
+          paint: {
+            'heatmap-weight': [
+              'interpolate',
+              ['linear'],
+              ['get', 'intensity'],
+              0,
+              0,
+              1,
+              1,
+            ],
+            'heatmap-intensity': [
+              'interpolate',
+              ['linear'],
+              ['zoom'],
+              0,
+              1,
+              9,
+              3,
+            ],
+            'heatmap-color': [
+              'interpolate',
+              ['linear'],
+              ['heatmap-density'],
+              0,
+              'rgba(139, 92, 246, 0)',
+              0.2,
+              'rgba(139, 92, 246, 0.3)',
+              0.4,
+              'rgba(139, 92, 246, 0.5)',
+              0.6,
+              'rgba(139, 92, 246, 0.7)',
+              0.8,
+              'rgba(139, 92, 246, 0.9)',
+              1,
+              'rgba(139, 92, 246, 1)',
+            ],
+            'heatmap-radius': [
+              'interpolate',
+              ['linear'],
+              ['zoom'],
+              0,
+              2,
+              9,
+              20,
+            ],
+            'heatmap-opacity': [
+              'interpolate',
+              ['linear'],
+              ['zoom'],
+              7,
+              0.6,
+              9,
+              0.8,
+            ],
+          },
+        });
+      } catch (error) {
+        console.warn('Error adding heatmap layer:', error);
+      }
+    }
+
+    return () => {
+      // Cleanup with proper null checks
+      try {
+        const mapToClean = map.current;
+        if (mapToClean && mapToClean.getLayer && mapToClean.getSource) {
+          if (mapToClean.getLayer(heatmapLayerId)) {
+            mapToClean.removeLayer(heatmapLayerId);
+          }
+          if (mapToClean.getSource(heatmapSourceId)) {
+            mapToClean.removeSource(heatmapSourceId);
+          }
+        }
+      } catch (error) {
+        // Silently fail during cleanup - map may have been destroyed
+        console.warn('Error during heatmap cleanup (map may be destroyed):', error);
+      }
+    };
+  }, [showHeatmap, allMemories, isMapLoaded, mode]);
 
   // Memoized handlers
   const handleMuteToggle = useCallback(() => {
@@ -352,33 +689,61 @@ export function MapScreen({ userId }: MapScreenProps) {
         </div>
       )}
 
-      {/* Status Bar */}
+      {/* Mode Toggle & Status Bar */}
       <div className="absolute top-4 left-4 right-4 z-10">
         <Card className="p-3 bg-white/90 backdrop-blur-sm">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center space-x-2">
-              <div className={`w-2 h-2 rounded-full ${isTracking ? 'bg-green-500' : 'bg-red-500'}`} />
-              <span className="text-sm font-medium">
-                {isTracking ? 'Tracking' : 'Not tracking'}
-              </span>
-              {accuracy && (
-                <span className="text-xs text-gray-500">
-                  ±{Math.round(accuracy)}m
+          <div className="flex items-center justify-between gap-4">
+            {/* Mode Toggle */}
+            <Tabs value={mode} onValueChange={(v) => setMode(v as 'input' | 'output')}>
+              <TabsList className="grid w-full grid-cols-2">
+                <TabsTrigger value="input" className="flex items-center gap-2">
+                  <MapPin className="w-4 h-4" />
+                  Input
+                </TabsTrigger>
+                <TabsTrigger value="output" className="flex items-center gap-2">
+                  <Headphones className="w-4 h-4" />
+                  Output
+                </TabsTrigger>
+              </TabsList>
+            </Tabs>
+
+            {/* Status (only show in output mode) */}
+            {mode === 'output' && (
+              <div className="flex items-center space-x-2 flex-wrap">
+                <div className={`w-2 h-2 rounded-full ${isTracking ? 'bg-green-500' : 'bg-red-500'}`} />
+                <span className="text-sm font-medium">
+                  {isTracking ? 'Tracking' : 'Not tracking'}
                 </span>
-              )}
-            </div>
-            
-            {error && (
-              <div className="text-xs text-red-600">
-                {error}
+                {accuracy && (
+                  <span className="text-xs text-gray-500">
+                    ±{Math.round(accuracy)}m
+                  </span>
+                )}
+                {error && (
+                  <div className="text-xs text-red-600 max-w-xs" title={error}>
+                    {error.length > 50 ? error.substring(0, 50) + '...' : error}
+                  </div>
+                )}
+                {!isTracking && !error && (
+                  <div className="text-xs text-blue-600">
+                    Requesting location...
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* Input mode hint */}
+            {mode === 'input' && (
+              <div className="text-xs text-gray-600">
+                {pickedLocation ? 'Location picked! Click + to add memory' : 'Click on map to add memory'}
               </div>
             )}
           </div>
         </Card>
       </div>
 
-      {/* Now Playing Chip - Geofencing */}
-      {currentlyPlaying && (
+      {/* Now Playing Chip - Geofencing (only in output mode) */}
+      {mode === 'output' && currentlyPlaying && (
         <NowPlayingChip memory={currentlyPlaying} onSkip={skip} />
       )}
 
@@ -418,42 +783,98 @@ export function MapScreen({ userId }: MapScreenProps) {
           right: 'max(1.5rem, calc(1rem + env(safe-area-inset-right, 0px)))'
         }}
       >
-        <Button
-          onClick={handleMuteToggle}
-          variant="outline"
-          size="icon"
-          className="bg-white/90 backdrop-blur-sm touch-manipulation"
-        >
-          {isMuted ? <VolumeX className="h-4 w-4" /> : <Volume2 className="h-4 w-4" />}
-        </Button>
+        {/* Output mode controls */}
+        {mode === 'output' && (
+          <>
+            <Button
+              onClick={handleMuteToggle}
+              variant="outline"
+              size="icon"
+              className="bg-white/90 backdrop-blur-sm touch-manipulation"
+            >
+              {isMuted ? <VolumeX className="h-4 w-4" /> : <Volume2 className="h-4 w-4" />}
+            </Button>
 
-        <Button
-          onClick={handleRecordingToggle}
-          variant="outline"
-          size="icon"
-          className={`bg-white/90 backdrop-blur-sm touch-manipulation ${isRecording ? 'bg-red-100' : ''}`}
-        >
-          {isRecording ? <MicOff className="h-4 w-4" /> : <Mic className="h-4 w-4" />}
-        </Button>
+            <Button
+              onClick={() => setShowHeatmap(!showHeatmap)}
+              variant="outline"
+              size="icon"
+              className={`bg-white/90 backdrop-blur-sm touch-manipulation ${showHeatmap ? 'bg-purple-100' : ''}`}
+              title="Toggle memory density heatmap"
+            >
+              <Layers className="h-4 w-4" />
+            </Button>
+          </>
+        )}
 
-        <Button
-          onClick={handleAddMemory}
-          variant="outline"
-          size="icon"
-          className="bg-white/90 backdrop-blur-sm touch-manipulation"
-        >
-          <Plus className="h-4 w-4" />
-        </Button>
+        {/* Input mode controls */}
+        {mode === 'input' && (
+          <Button
+            onClick={handleAddMemory}
+            variant="outline"
+            size="icon"
+            className="bg-white/90 backdrop-blur-sm touch-manipulation"
+            title="Add memory at picked location"
+            disabled={!pickedLocation}
+          >
+            <Plus className="h-4 w-4" />
+          </Button>
+        )}
+
+        {/* Common controls */}
+        {mode === 'output' && (
+          <>
+            <Button
+              onClick={handleRecordingToggle}
+              variant="outline"
+              size="icon"
+              className={`bg-white/90 backdrop-blur-sm touch-manipulation ${isRecording ? 'bg-red-100' : ''}`}
+            >
+              {isRecording ? <MicOff className="h-4 w-4" /> : <Mic className="h-4 w-4" />}
+            </Button>
+
+            <Button
+              onClick={handleAddMemory}
+              variant="outline"
+              size="icon"
+              className="bg-white/90 backdrop-blur-sm touch-manipulation"
+            >
+              <Plus className="h-4 w-4" />
+            </Button>
+          </>
+        )}
+
       </div>
 
       {/* Add Memory Sheet */}
       {showAddMemory && (
         <AddMemorySheet
           isOpen={showAddMemory}
-          onClose={handleCloseMemory}
-          userLocation={location}
+          onClose={() => {
+            handleCloseMemory();
+            setPickedLocation(null);
+            // Remove picked location marker
+            const marker = markersRef.current.get('picked-location');
+            if (marker) {
+              marker.remove();
+              markersRef.current.delete('picked-location');
+            }
+          }}
+          userLocation={pickedLocation ? { ...pickedLocation, timestamp: Date.now() } : location || undefined}
           userId={userId}
         />
+      )}
+
+      {/* Input Mode Cursor Hint */}
+      {mode === 'input' && !pickedLocation && (
+        <div className="absolute bottom-20 left-1/2 transform -translate-x-1/2 z-10">
+          <Card className="p-3 bg-blue-500/90 backdrop-blur-sm text-white">
+            <div className="flex items-center gap-2 text-sm">
+              <MapPin className="w-4 h-4" />
+              <span>Click on the map to place a memory</span>
+            </div>
+          </Card>
+        </div>
       )}
     </div>
   );

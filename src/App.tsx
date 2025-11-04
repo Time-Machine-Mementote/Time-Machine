@@ -5,6 +5,9 @@ import { BrowserRouter, Routes, Route } from "react-router-dom";
 import { AuthGuard } from "./components/AuthGuard";
 import { MapScreen } from "./components/MapScreen";
 import NotFound from "./pages/NotFound";
+import InputYourTime from "./pages/InputYourTime";
+import TerminalInput from "./pages/TerminalInput";
+import Receipt from "./pages/Receipt";
 import { useEffect, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
 
@@ -34,7 +37,10 @@ const App = () => {
         <Sonner />
         <BrowserRouter>
           <Routes>
-            <Route path="/" element={<MapScreen userId={user?.id} />} />
+            <Route path="/" element={<InputYourTime />} />
+            <Route path="/terminal" element={<TerminalInput />} />
+            <Route path="/receipt" element={<Receipt />} />
+            <Route path="/map" element={<MapScreen userId={user?.id} />} />
             <Route path="*" element={<NotFound />} />
           </Routes>
         </BrowserRouter>

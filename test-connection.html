@@ -1,0 +1,101 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Supabase Connection Test</title>
+    <style>
+        body {
+            font-family: monospace;
+            padding: 20px;
+            background: #1a1a1a;
+            color: #00ff00;
+        }
+        .success { color: #00ff00; }
+        .error { color: #ff0000; }
+        .warning { color: #ffff00; }
+        pre {
+            background: #000;
+            padding: 10px;
+            border: 1px solid #333;
+            overflow-x: auto;
+        }
+    </style>
+</head>
+<body>
+    <h1>🔍 Supabase Connection Test</h1>
+    <p>Open browser console (F12) to see detailed logs.</p>
+    
+    <div id="status">Testing connection...</div>
+    <pre id="output"></pre>
+
+    <script type="module">
+        const output = document.getElementById('output');
+        const status = document.getElementById('status');
+        
+        function log(message, type = 'info') {
+            const color = type === 'error' ? 'error' : type === 'success' ? 'success' : 'warning';
+            output.innerHTML += `<span class="${color}">${new Date().toLocaleTimeString()}: ${message}</span>\n`;
+            console.log(message);
+        }
+        
+        // Get env vars (they should be in .env.local, but we can't read that from browser)
+        // This test will show what the app is actually using
+        log('Starting connection test...');
+        log('Note: This test runs in browser, so it uses the compiled app config');
+        log('Check your .env.local file has:');
+        log('  VITE_SUPABASE_URL=https://qhbrnotooiutpwwtadlx.supabase.co');
+        log('  VITE_SUPABASE_ANON_KEY=your-anon-key');
+        log('');
+        
+        // Try to import and test
+        try {
+            log('Attempting to fetch Supabase REST API...');
+            
+            // You need to replace YOUR_ANON_KEY with actual key from .env.local
+            const testUrl = 'https://qhbrnotooiutpwwtadlx.supabase.co/rest/v1/';
+            
+            fetch(testUrl, {
+                method: 'GET',
+                headers: {
+                    'apikey': 'YOUR_ANON_KEY_HERE', // Replace this!
+                    'Authorization': 'Bearer YOUR_ANON_KEY_HERE' // Replace this!
+                }
+            })
+            .then(response => {
+                if (response.ok) {
+                    log('✅ Successfully connected to Supabase!', 'success');
+                    status.innerHTML = '<span class="success">✅ CONNECTED</span>';
+                    return response.text();
+                } else {
+                    log(`❌ HTTP ${response.status}: ${response.statusText}`, 'error');
+                    status.innerHTML = `<span class="error">❌ HTTP ${response.status}</span>`;
+                    return response.text();
+                }
+            })
+            .then(data => {
+                log('Response: ' + (data.substring(0, 200) || '(empty)'));
+            })
+            .catch(error => {
+                log(`❌ Network error: ${error.message}`, 'error');
+                status.innerHTML = `<span class="error">❌ ${error.message}</span>`;
+                
+                if (error.message.includes('fetch')) {
+                    log('This usually means:', 'warning');
+                    log('1. URL is wrong or project doesn\'t exist', 'warning');
+                    log('2. CORS issue (should work from localhost)', 'warning');
+                    log('3. Network connectivity problem', 'warning');
+                }
+            });
+            
+            log('');
+            log('To test with your actual anon key:');
+            log('1. Get your anon key from Supabase dashboard → Settings → API');
+            log('2. Replace YOUR_ANON_KEY_HERE in this file with your actual key');
+            log('3. Or better: check the actual app console (F12) for real values');
+            
+        } catch (error) {
+            log(`❌ Test setup error: ${error.message}`, 'error');
+        }
+    </script>
+</body>
+</html>
+

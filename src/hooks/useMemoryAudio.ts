@@ -70,11 +70,35 @@ export function useMemoryAudio(): UseMemoryAudioReturn {
     // Stop any currently playing audio
     stopPlaying();
 
+    // Validate URL
+    if (!audioUrl || !audioUrl.startsWith('http')) {
+      throw new Error('Invalid audio URL');
+    }
+
     // Play the audio
     if (audioRef.current) {
-      audioRef.current.src = audioUrl;
-      await audioRef.current.play();
-      setCurrentAudioUrl(audioUrl);
+      try {
+        audioRef.current.src = audioUrl;
+        audioRef.current.onerror = (e) => {
+          console.error('Audio playback error:', e);
+          console.error('Failed to load audio from URL:', audioUrl);
+          toast.error('Failed to load audio. The file may not exist or be accessible.');
+          setIsPlaying(false);
+          setCurrentAudioUrl(null);
+        };
+        
+        await audioRef.current.load();
+        await audioRef.current.play();
+        setCurrentAudioUrl(audioUrl);
+      } catch (error: any) {
+        console.error('Error playing audio URL:', error);
+        if (error.name === 'NotAllowedError') {
+          toast.error('Audio playback blocked. Please interact with the page first.');
+        } else {
+          toast.error('Failed to play audio. Please try again.');
+        }
+        throw error;
+      }
     }
   }, [stopPlaying]);
 
@@ -95,24 +119,37 @@ export function useMemoryAudio(): UseMemoryAudioReturn {
       // Format memory for narration
       const narrationText = formatMemoryForNarration(memory);
       
+      if (!narrationText || narrationText.trim().length === 0) {
+        throw new Error('Memory text is empty. Cannot generate audio.');
+      }
+
       toast.loading('Generating audio narration...', { id: 'memory-audio' });
 
       // Generate audio using OpenAI TTS
-      const { audioUrl } = await synthesizeAudio(narrationText, memory.id);
+      const result = await synthesizeAudio(narrationText, memory.id);
       
-      if (!audioUrl) {
-        throw new Error('Failed to generate audio');
+      if (!result || !result.audioUrl) {
+        throw new Error('Edge Function did not return audio URL');
       }
 
-      // Update memory in database with audio URL if it's new
-      if (!memory.audio_url) {
-        const { error } = await supabase
-          .from('memories')
-          .update({ audio_url: audioUrl })
-          .eq('id', memory.id);
-        
-        if (error) {
-          console.warn('Failed to update memory with audio URL:', error);
+      const audioUrl = result.audioUrl;
+      console.log('Generated audio URL:', audioUrl);
+
+      // If it's a data URL (base64), we can play it directly
+      // If it's a storage URL, update the database
+      if (audioUrl.startsWith('http')) {
+        // It's a storage URL - update memory in database
+        if (!memory.audio_url) {
+          const { error } = await supabase
+            .from('memories')
+            .update({ audio_url: audioUrl })
+            .eq('id', memory.id);
+          
+          if (error) {
+            console.warn('Failed to update memory with audio URL:', error);
+          } else {
+            console.log('✓ Memory updated with audio URL');
+          }
         }
       }
 
@@ -120,9 +157,13 @@ export function useMemoryAudio(): UseMemoryAudioReturn {
 
       // Play the generated audio
       await playAudioUrl(audioUrl);
-    } catch (error) {
+    } catch (error: any) {
       console.error('Error generating audio:', error);
-      toast.error('Failed to generate audio narration', { id: 'memory-audio' });
+      const errorMessage = error.message || 'Failed to generate audio narration';
+      toast.error(errorMessage, { 
+        id: 'memory-audio',
+        duration: 8000, // Show longer for detailed errors
+      });
     } finally {
       setIsGenerating(false);
     }

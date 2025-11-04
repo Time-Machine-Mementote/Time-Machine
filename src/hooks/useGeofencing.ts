@@ -1,7 +1,11 @@
 // Geofencing Hook for Berkeley Memory Map
+// Uses Turf.js for distance calculation and memory scoring
 import { useState, useEffect, useRef, useCallback } from 'react';
-import { getMemoriesInRadius, recordPlay } from '@/services/memoryApi';
+import { getNearbyMemories, recordPlay } from '@/services/memoryApi';
 import { audioQueue } from '@/utils/audioQueue';
+import { getBestMemory } from '@/utils/memoryScoring';
+import distance from '@turf/distance';
+import { point } from '@turf/helpers';
 import type { Memory, UserLocation, GeofenceConfig } from '@/types/memory';
 import { DEFAULT_GEOFENCE_CONFIG } from '@/types/memory';
 
@@ -60,16 +64,24 @@ export function useGeofencing(options: UseGeofencingOptions = {}) {
     return () => clearInterval(checkInterval);
   }, []);
 
-  // Calculate distance between two points (Haversine formula)
+  // Calculate distance using Turf.js
   const calculateDistance = useCallback((lat1: number, lng1: number, lat2: number, lng2: number): number => {
-    const R = 6371000; // Earth's radius in meters
-    const dLat = (lat2 - lat1) * Math.PI / 180;
-    const dLng = (lng2 - lng1) * Math.PI / 180;
-    const a = Math.sin(dLat / 2) * Math.sin(dLat / 2) +
-              Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) *
-              Math.sin(dLng / 2) * Math.sin(dLng / 2);
-    const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
-    return R * c;
+    try {
+      const point1 = point([lng1, lat1]);
+      const point2 = point([lng2, lat2]);
+      return distance(point1, point2, { units: 'meters' });
+    } catch (error) {
+      // Fallback to Haversine if Turf.js fails
+      console.warn('Turf.js distance calculation failed, using Haversine:', error);
+      const R = 6371000;
+      const dLat = (lat2 - lat1) * Math.PI / 180;
+      const dLng = (lng2 - lng1) * Math.PI / 180;
+      const a = Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+                Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) *
+                Math.sin(dLng / 2) * Math.sin(dLng / 2);
+      const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+      return R * c;
+    }
   }, []);
 
   // Check for nearby memories and trigger audio
@@ -83,7 +95,8 @@ export function useGeofencing(options: UseGeofencingOptions = {}) {
     lastCheckRef.current = now;
 
     try {
-      const memories = await getMemoriesInRadius(
+      // Use nearby_memories RPC for optimized PostGIS query
+      const memories = await getNearbyMemories(
         location.lat,
         location.lng,
         finalConfig.maxDistance
@@ -94,46 +107,47 @@ export function useGeofencing(options: UseGeofencingOptions = {}) {
         nearbyMemories: memories,
       }));
 
-      // Process each memory for audio queue
-      for (const memory of memories) {
-        // Calculate distance
-        const distance = calculateDistance(
-          location.lat, location.lng,
-          memory.lat, memory.lng
-        );
+      // Use memory scoring to get the best memory to play
+      const bestMemory = getBestMemory(memories, location);
+      
+      if (bestMemory) {
+        // Only add to queue if memory has audio URL or we can generate it
+        // For now, skip memories without audio_url (they need to be generated via click first)
+        if (!bestMemory.audio_url) {
+          console.log('Memory has no audio URL, skipping auto-play:', bestMemory.id);
+          console.log('Click on memory marker to generate audio first');
+          return;
+        }
 
-        // Check if within memory's radius
-        if (distance <= memory.radius_m) {
-          // Determine relationship to user
-          const isOwner = userId ? memory.author_id === userId : false;
-          const isFriend = false; // TODO: Implement friendship checking
+        // Determine relationship to user
+        const isOwner = userId ? bestMemory.author_id === userId : false;
+        const isFriend = false; // TODO: Implement friendship checking
 
-          // Add to audio queue
-          audioQueue.addMemory(memory, location, isOwner, isFriend);
+        // Add best memory to audio queue (scoring ensures highest priority)
+        audioQueue.addMemory(bestMemory, location, isOwner, isFriend);
 
-          // Record play if user is authenticated
-          if (userId) {
-            try {
-              await recordPlay({
-                user_id: userId,
-                memory_id: memory.id,
-                lat: location.lat,
-                lng: location.lng,
-                device_info: {
-                  userAgent: navigator.userAgent,
-                  timestamp: now,
-                },
-              });
-            } catch (error) {
-              console.warn('Failed to record play:', error);
-            }
+        // Record play if user is authenticated
+        if (userId) {
+          try {
+            await recordPlay({
+              user_id: userId,
+              memory_id: bestMemory.id,
+              lat: location.lat,
+              lng: location.lng,
+              device_info: {
+                userAgent: navigator.userAgent,
+                timestamp: now,
+              },
+            });
+          } catch (error) {
+            console.warn('Failed to record play:', error);
           }
         }
       }
     } catch (error) {
       console.error('Failed to check nearby memories:', error);
     }
-  }, [finalConfig.maxDistance, finalConfig.sampleInterval, userId, calculateDistance]);
+  }, [finalConfig.maxDistance, finalConfig.sampleInterval, userId]);
 
   // Update ref when checkNearbyMemories changes
   useEffect(() => {
@@ -161,7 +175,8 @@ export function useGeofencing(options: UseGeofencingOptions = {}) {
         return;
       }
 
-      // Start watching position
+      // Start watching position with more lenient settings
+      // Try high accuracy first, but fall back to less strict settings if it times out
       watchIdRef.current = navigator.geolocation.watchPosition(
         (position) => {
           const newLocation: UserLocation = {
@@ -182,16 +197,29 @@ export function useGeofencing(options: UseGeofencingOptions = {}) {
         },
         (error) => {
           console.error('Geolocation error:', error);
+          
+          // Provide helpful error messages
+          let errorMessage = 'Location error: ';
+          if (error.code === error.TIMEOUT) {
+            errorMessage += 'Timeout expired. Please check your location settings and try again.';
+          } else if (error.code === error.PERMISSION_DENIED) {
+            errorMessage += 'Permission denied. Please allow location access in your browser settings.';
+          } else if (error.code === error.POSITION_UNAVAILABLE) {
+            errorMessage += 'Position unavailable. Check your device location settings.';
+          } else {
+            errorMessage += error.message || 'Unknown error';
+          }
+          
           setState(prev => ({
             ...prev,
-            error: `Location error: ${error.message}`,
+            error: errorMessage,
             isTracking: false,
           }));
         },
         {
-          enableHighAccuracy: true,
-          maximumAge: 5000,
-          timeout: 10000,
+          enableHighAccuracy: false, // Less strict for faster response
+          maximumAge: 30000, // Accept cached location up to 30 seconds old
+          timeout: 20000, // Increased timeout to 20 seconds
         }
       );
 

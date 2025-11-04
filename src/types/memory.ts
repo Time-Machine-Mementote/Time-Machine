@@ -12,6 +12,7 @@ export interface Memory {
   place_name?: string;
   audio_url?: string;
   privacy: 'private' | 'friends' | 'public';
+  emotion?: number; // 0-1 scale for memory scoring
   tags?: string[];
   parent_memory_id?: string;
   source: string;

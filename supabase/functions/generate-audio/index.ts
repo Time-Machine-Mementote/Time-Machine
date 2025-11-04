@@ -114,22 +114,21 @@ serve(async (req) => {
       })
     }
 
-    // Simple authorization check
+    // Optional authorization check (allow anonymous for art exhibition)
     const authHeader = req.headers.get("Authorization")
-    if (!authHeader || !authHeader.startsWith("Bearer ")) {
-      return new Response(JSON.stringify({ 
-        error: "Missing authorization header",
-        success: false 
-      }), {
-        status: 401,
-        headers: {
-          "Content-Type": "application/json",
-          "Access-Control-Allow-Origin": "*",
-        },
-      })
+    let userId = "anonymous-user"
+    
+    if (authHeader && authHeader.startsWith("Bearer ")) {
+      // Try to extract user ID from token if available
+      try {
+        const token = authHeader.replace("Bearer ", "")
+        // Simple check - in production, decode JWT to get user ID
+        userId = "authenticated-user"
+      } catch {
+        userId = "anonymous-user"
+      }
     }
-
-    const userId = "test-user" // Simplified for now
+    // Allow anonymous requests for art exhibition
     
     // Check rate limit
     if (!checkRateLimit(userId)) {

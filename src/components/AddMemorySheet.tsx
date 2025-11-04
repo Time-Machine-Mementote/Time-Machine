@@ -15,6 +15,7 @@ import mapboxgl from 'mapbox-gl';
 import 'mapbox-gl/dist/mapbox-gl.css';
 import VoiceRecorder from '@/components/VoiceRecorder';
 import { uploadAudioToStorage } from '@/utils/audioStorage';
+import { enrichMemoryWithEntities } from '@/services/memoryApi';
 
 // TypeScript declarations for Web Speech API
 declare global {
@@ -327,6 +328,16 @@ export function AddMemorySheet({ isOpen, onClose, userLocation, userId }: AddMem
 
       console.log('Memory created successfully:', data);
       toast.success('Memory created successfully!');
+      
+      // Enrich memory with extracted entities and update places table (non-blocking)
+      const memoryText = text.trim() || (audioBlobForUpload ? '[Voice memo - see audio]' : '');
+      if (memoryText && data?.id) {
+        // Call enrichment in the background - don't wait for it
+        enrichMemoryWithEntities(data.id, memoryText).catch(err => {
+          console.error('Background memory enrichment failed:', err);
+          // Don't show error to user - enrichment is non-critical
+        });
+      }
       
       // Reset form
       setText('');
