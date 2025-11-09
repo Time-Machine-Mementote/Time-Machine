@@ -198,7 +198,7 @@ export default function InputYourTime() {
               location: { lat, lng } 
             } 
           });
-        }, 3000);
+        }, 1000);
       };
 
       map.current.on('click', handleMapClick);

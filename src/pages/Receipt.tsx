@@ -70,10 +70,10 @@ export default function Receipt() {
   };
 
   return (
-    <div className="relative w-full h-screen bg-black text-green-400 font-mono flex items-center justify-center">
+    <div className="relative w-full h-screen bg-black text-white font-mono flex items-center justify-center">
       {/* Terminal header */}
-      <div className="absolute top-0 left-0 right-0 bg-black/90 border-b border-green-400/30 px-4 py-2 z-10">
-        <div className="font-mono text-xs text-green-400/70">
+      <div className="absolute top-0 left-0 right-0 bg-black/90 border-b border-white/30 px-4 py-2 z-10">
+        <div className="font-mono text-xs text-white/70">
           TIME_MACHINE.EXE v2.0 | STATUS: MEMORY SAVED | {new Date().toLocaleTimeString()}
         </div>
       </div>
@@ -82,10 +82,10 @@ export default function Receipt() {
       <div className={`text-center transition-opacity duration-1000 ${showContent ? 'opacity-100' : 'opacity-0'}`}>
         {/* Thank you message */}
         <div className="mb-8">
-          <div className="text-5xl md:text-7xl font-mono text-green-400 mb-4 animate-pulse">
+          <div className="text-5xl md:text-7xl font-mono text-white mb-4 animate-pulse">
             THANK YOU
           </div>
-          <div className="text-2xl md:text-4xl font-mono text-green-400/70">
+          <div className="text-2xl md:text-4xl font-mono text-white/60">
             FOR YOUR TIME
           </div>
         </div>
@@ -94,18 +94,18 @@ export default function Receipt() {
         {state?.memory && (
           <div 
             ref={receiptRef}
-            className="max-w-md mx-auto bg-black border-2 border-green-400/50 p-6 mt-8 text-left"
+            className="max-w-md mx-auto bg-black border-2 border-white/60 p-6 mt-8 text-left"
           >
             <div className="receipt-content">
               {/* Receipt header */}
-              <div className="header border-b border-green-400/30 pb-2 mb-4">
-                <div className="text-2xl font-mono text-green-400 text-center">
+              <div className="header border-b border-white/30 pb-2 mb-4">
+                <div className="text-2xl font-mono text-white text-center">
                   TIME MACHINE
                 </div>
-                <div className="text-xs text-green-400/70 text-center mt-1">
+                <div className="text-xs text-white/60 text-center mt-1">
                   Memory Receipt
                 </div>
-                <div className="text-xs text-green-400/50 text-center mt-1">
+                <div className="text-xs text-white/50 text-center mt-1">
                   {new Date().toLocaleDateString()} {new Date().toLocaleTimeString()}
                 </div>
               </div>
@@ -114,11 +114,11 @@ export default function Receipt() {
               <div className="space-y-2 text-sm">
                 <div className="divider"></div>
                 <div>
-                  <span className="text-green-400/70">Location:</span>
-                  <div className="text-green-400 ml-2">
+                  <span className="text-white/60">Location:</span>
+                  <div className="text-white ml-2">
                     {state.memory.place_name || 'Unknown'}
                   </div>
-                  <div className="text-green-400/50 text-xs ml-2">
+                  <div className="text-white/50 text-xs ml-2">
                     ({state.memory.lat?.toFixed(4)}, {state.memory.lng?.toFixed(4)})
                   </div>
                 </div>
@@ -126,8 +126,8 @@ export default function Receipt() {
                 <div className="divider"></div>
                 
                 <div>
-                  <span className="text-green-400/70">Memory:</span>
-                  <div className="text-green-400 ml-2 mt-1 whitespace-pre-wrap">
+                  <span className="text-white/60">Memory:</span>
+                  <div className="text-white ml-2 mt-1 whitespace-pre-wrap">
                     {state.text || '[Voice memo recorded]'}
                   </div>
                 </div>
@@ -136,8 +136,8 @@ export default function Receipt() {
                   <>
                     <div className="divider"></div>
                     <div>
-                      <span className="text-green-400/70">Audio:</span>
-                      <div className="text-green-400/50 text-xs ml-2">
+                      <span className="text-white/60">Audio:</span>
+                      <div className="text-white/50 text-xs ml-2">
                         ✓ Recorded
                       </div>
                     </div>
@@ -145,17 +145,17 @@ export default function Receipt() {
                 )}
 
                 <div className="divider"></div>
-                <div className="text-green-400/50 text-xs">
+                <div className="text-white/50 text-xs">
                   ID: {state.memory.id?.substring(0, 8)}...
                 </div>
               </div>
 
               {/* Receipt footer */}
-              <div className="footer border-t border-green-400/30 pt-4 mt-4">
-                <div className="text-green-400/70 text-xs text-center">
+              <div className="footer border-t border-white/30 pt-4 mt-4">
+                <div className="text-white/60 text-xs text-center">
                   Your memory has been saved to the Time Machine
                 </div>
-                <div className="text-green-400/50 text-xs text-center mt-2">
+                <div className="text-white/50 text-xs text-center mt-2">
                   Thank you for contributing
                 </div>
               </div>
@@ -167,18 +167,18 @@ export default function Receipt() {
         <div className="mt-8">
           <button
             onClick={handlePrintReceipt}
-            className="px-6 py-3 border-2 border-green-400 text-green-400 font-mono hover:bg-green-400 hover:text-black transition-all cursor-pointer"
+            className="px-6 py-3 border-2 border-white text-white font-mono hover:bg-white hover:text-black transition-all cursor-pointer"
             type="button"
           >
             [PRINT RECEIPT]
           </button>
-          <div className="text-green-400/40 text-xs mt-2 font-mono">
+          <div className="text-white/40 text-xs mt-2 font-mono">
             &gt; Connect receipt printer to enable printing
           </div>
         </div>
 
         {/* Return message */}
-        <div className="mt-8 text-green-400/50 text-sm">
+        <div className="mt-8 text-white/50 text-sm">
           &gt; Returning to start in a few seconds...
         </div>
       </div>
