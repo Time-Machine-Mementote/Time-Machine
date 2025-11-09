@@ -26,6 +26,13 @@ export default function TerminalInput() {
   const textInputRef = useRef<HTMLTextAreaElement>(null);
   const [userId, setUserId] = useState<string | null>(null);
   const [connectionStatus, setConnectionStatus] = useState<'checking' | 'connected' | 'disconnected'>('checking');
+  const [isTranscribing, setIsTranscribing] = useState(false);
+  const [isSpeechSupported, setIsSpeechSupported] = useState(false);
+  const [transcriptionError, setTranscriptionError] = useState<string | null>(null);
+  const recognitionRef = useRef<any>(null);
+  const baseTextRef = useRef('');
+  const finalTranscriptRef = useRef('');
+  const isRecordingRef = useRef(false);
 
   // Check Supabase connection on mount
   useEffect(() => {
@@ -117,6 +124,10 @@ export default function TerminalInput() {
     });
   }, []);
 
+  useEffect(() => {
+    isRecordingRef.current = isRecording;
+  }, [isRecording]);
+
   // Focus input on mount
   useEffect(() => {
     setTimeout(() => {
@@ -135,6 +146,76 @@ export default function TerminalInput() {
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [navigate, isProcessing]);
+
+  useEffect(() => {
+    const SpeechRecognition: any =
+      (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
+
+    if (!SpeechRecognition) {
+      setIsSpeechSupported(false);
+      return;
+    }
+
+    const recognition = new SpeechRecognition();
+    recognition.lang = 'en-US';
+    recognition.continuous = true;
+    recognition.interimResults = true;
+
+    recognition.onstart = () => {
+      setIsTranscribing(true);
+    };
+
+    recognition.onresult = (event: any) => {
+      let interimTranscript = '';
+      let newlyFinalTranscript = '';
+
+      for (let i = event.resultIndex; i < event.results.length; i++) {
+        const result = event.results[i];
+        const transcript = result[0]?.transcript ?? '';
+        if (result.isFinal) {
+          newlyFinalTranscript += transcript + ' ';
+        } else {
+          interimTranscript += transcript;
+        }
+      }
+
+      if (newlyFinalTranscript) {
+        finalTranscriptRef.current = `${finalTranscriptRef.current}${newlyFinalTranscript}`;
+      }
+
+      const combined = `${baseTextRef.current}${finalTranscriptRef.current}${interimTranscript}`.trim();
+      if (combined) {
+        setText(combined.replace(/\s+/g, ' ').trim());
+      }
+    };
+
+    recognition.onerror = (event: any) => {
+      console.error('Speech recognition error:', event);
+      if (event.error !== 'no-speech') {
+        setTranscriptionError(event.error || 'Speech recognition failed');
+        setIsTranscribing(false);
+      }
+    };
+
+    recognition.onend = () => {
+      if (isRecordingRef.current) {
+        try {
+          recognition.start();
+        } catch (err) {
+          console.warn('Failed to restart speech recognition:', err);
+        }
+      } else {
+        setIsTranscribing(false);
+      }
+    };
+
+    recognitionRef.current = recognition;
+    setIsSpeechSupported(true);
+
+    return () => {
+      recognition.stop();
+    };
+  }, []);
 
   // Simple audio recording functions
   const startRecording = async () => {
@@ -167,6 +248,18 @@ export default function TerminalInput() {
       };
 
       mediaRecorder.start(1000);
+      baseTextRef.current = text ? `${text.trim()} ` : '';
+      finalTranscriptRef.current = '';
+      setTranscriptionError(null);
+      if (recognitionRef.current && isSpeechSupported) {
+        try {
+          recognitionRef.current.start();
+          setIsTranscribing(true);
+        } catch (error) {
+          console.error('Failed to start speech recognition:', error);
+          setTranscriptionError('Could not start speech recognition');
+        }
+      }
       setIsRecording(true);
     } catch (error) {
       console.error('Error starting recording:', error);
@@ -178,6 +271,21 @@ export default function TerminalInput() {
     if (mediaRecorderRef.current && isRecording) {
       mediaRecorderRef.current.stop();
       setIsRecording(false);
+    }
+    if (recognitionRef.current && isTranscribing) {
+      try {
+        recognitionRef.current.stop();
+      } catch (error) {
+        console.warn('Failed to stop speech recognition:', error);
+      } finally {
+        setIsTranscribing(false);
+      }
+    }
+    if (finalTranscriptRef.current) {
+      const combined = `${baseTextRef.current}${finalTranscriptRef.current}`.replace(/\s+/g, ' ').trim();
+      if (combined) {
+        setText(combined);
+      }
     }
   };
 
@@ -415,21 +523,16 @@ Troubleshooting:
   return (
     <div className="fixed inset-0 bg-black/95 z-50 flex items-center justify-center font-mono">
       {/* Terminal window */}
-      <div className="w-full max-w-4xl mx-4 border-2 border-green-400 bg-black text-green-400 shadow-2xl">
+      <div className="w-full max-w-4xl mx-4 border-2 border-white bg-black text-white shadow-2xl">
         {/* Terminal header */}
-        <div className="bg-green-900/30 border-b border-green-400 px-4 py-2 flex items-center justify-between">
-          <div className="flex items-center gap-2">
-            <div className="w-3 h-3 rounded-full bg-red-500"></div>
-            <div className="w-3 h-3 rounded-full bg-yellow-500"></div>
-            <div className="w-3 h-3 rounded-full bg-green-500"></div>
-            <span className="ml-4 text-xs text-green-400/70">TERMINAL.EXE - MEMORY INPUT</span>
-          </div>
+        <div className="bg-white/10 border-b border-white px-4 py-2 flex items-center justify-between">
+          <span className="text-xs tracking-wide uppercase text-white/70">TERMINAL.EXE - MEMORY INPUT</span>
           <div className="flex items-center gap-3">
             <div 
               className={`text-xs font-mono cursor-help ${
-                connectionStatus === 'connected' ? 'text-green-400' :
-                connectionStatus === 'disconnected' ? 'text-red-400 animate-pulse' :
-                'text-yellow-400'
+                connectionStatus === 'connected' ? 'text-white' :
+                connectionStatus === 'disconnected' ? 'text-white/40 underline' :
+                'text-white/60'
               }`} 
               title={connectionStatus === 'disconnected' ? 'Check browser console (F12) for details. Common issues: .env.local not loaded, dev server not restarted, or database not set up.' : ''}
               onClick={() => {
@@ -447,7 +550,7 @@ Troubleshooting:
                connectionStatus === 'disconnected' ? '● DISCONNECTED (click for help)' :
                '● CHECKING...'}
             </div>
-            <div className="text-xs text-green-400/50">
+            <div className="text-xs text-white/60">
               {new Date().toLocaleTimeString()}
             </div>
           </div>
@@ -455,27 +558,30 @@ Troubleshooting:
 
         {/* Terminal content */}
         <div className="p-6 space-y-4 min-h-[400px]">
+          <div className="text-sm text-white/80 border border-dashed border-white/30 px-4 py-3">
+            Press ESC at any time to cancel and return to the home screen.
+          </div>
           {/* Welcome message */}
-          <div className="text-green-400/70 text-sm mb-4">
+          <div className="text-white/70 text-sm mb-4">
             <div>&gt; Welcome to Time Machine Memory Terminal</div>
             <div>&gt; Enter your memory below, then press Ctrl+Enter or click SUBMIT</div>
             {state?.location ? (
-              <div className="mt-2 text-green-400/50">
+              <div className="mt-2 text-white/60">
                 &gt; Location: ({state.location.lat.toFixed(4)}, {state.location.lng.toFixed(4)})
               </div>
             ) : (
-              <div className="mt-2 text-yellow-400/50">
+              <div className="mt-2 text-white/50">
                 &gt; Location: Default (Berkeley campus)
               </div>
             )}
-            <div className="mt-2 text-green-400/50">&gt; Press ESC to cancel</div>
+            <div className="mt-2 text-white/60">&gt; Press ESC to cancel</div>
           </div>
 
           {/* Input area - SIMPLIFIED */}
           <form onSubmit={handleSubmit} className="space-y-4">
             {/* Text input */}
             <div className="space-y-2">
-              <div className="text-green-400/70 text-sm font-mono">
+              <div className="text-white/70 text-sm font-mono">
                 &gt; Enter your memory:
               </div>
               <textarea
@@ -489,14 +595,14 @@ Troubleshooting:
                   }
                 }}
                 disabled={isProcessing}
-                className="w-full bg-black border border-green-400/50 px-3 py-2 text-green-400 font-mono focus:outline-none focus:border-green-400 disabled:opacity-50 min-h-[100px] resize-none"
+                className="w-full bg-black border border-white/60 px-3 py-2 text-white font-mono focus:outline-none focus:border-white disabled:opacity-50 min-h-[100px] resize-none"
                 placeholder="Type your memory here... (Press Ctrl+Enter or click SUBMIT)"
               />
             </div>
 
             {/* Simple audio recording */}
-            <div className="space-y-2 border-t border-green-400/30 pt-4">
-              <div className="text-green-400/70 text-sm font-mono">
+            <div className="space-y-2 border-t border-white/40 pt-4">
+              <div className="text-white/70 text-sm font-mono">
                 &gt; Audio (optional):
               </div>
               <div className="flex items-center gap-3">
@@ -505,43 +611,62 @@ Troubleshooting:
                     type="button"
                     onClick={isRecording ? stopRecording : startRecording}
                     disabled={isProcessing}
-                    className={`px-4 py-2 border border-green-400 text-green-400 font-mono hover:bg-green-400 hover:text-black transition-all disabled:opacity-50 ${
-                      isRecording ? 'bg-red-500/20 border-red-400 text-red-400 animate-pulse' : ''
+                    className={`px-4 py-2 border border-white text-white font-mono hover:bg-white hover:text-black transition-all disabled:opacity-50 ${
+                      isRecording ? 'bg-white/20 text-white animate-pulse' : ''
                     }`}
                   >
                     {isRecording ? '⏹ STOP' : '🎤 RECORD'}
                   </button>
                 ) : (
                   <div className="flex items-center gap-3">
-                    <span className="text-green-400/70 font-mono text-sm">✓ Audio recorded</span>
+                    <span className="text-white/70 font-mono text-sm">✓ Audio recorded</span>
                     <button
                       type="button"
                       onClick={() => setAudioBlob(null)}
                       disabled={isProcessing}
-                      className="px-3 py-1 border border-red-400/50 text-red-400 font-mono hover:bg-red-400 hover:text-black text-sm disabled:opacity-50"
+                      className="px-3 py-1 border border-white text-white font-mono hover:bg-white hover:text-black text-sm disabled:opacity-50"
                     >
                       CLEAR
                     </button>
                   </div>
                 )}
               </div>
+              {!isSpeechSupported && (
+                <div className="text-xs text-white/50">
+                  &gt; Speech-to-text unavailable in this browser. Your audio will still be saved.
+                </div>
+              )}
+              {isTranscribing && (
+                <div className="text-xs text-white/70">
+                  &gt; Transcribing your audio...
+                </div>
+              )}
+              {transcriptionError && (
+                <div className="text-xs text-white/50">
+                  &gt; Transcription error: {transcriptionError}
+                </div>
+              )}
             </div>
 
             {/* Submit button - SIMPLIFIED */}
-            <div className="border-t border-green-400/30 pt-4">
+            <div className="border-t border-white/30 pt-4">
               <button
                 type="submit"
                 disabled={isProcessing || (!text.trim() && !audioBlob)}
-                className="w-full px-6 py-3 border-2 border-green-400 text-green-400 font-mono hover:bg-green-400 hover:text-black transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+                className="w-full px-6 py-3 border-2 border-white text-white font-mono hover:bg-white hover:text-black transition-all disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 {isProcessing ? 'PROCESSING...' : 'SUBMIT (or Ctrl+Enter)'}
               </button>
             </div>
 
             {/* Status line */}
-            <div className="text-green-400/50 text-xs font-mono">
+            <div className="text-white/60 text-xs font-mono">
               {isProcessing ? (
                 <span>&gt; Saving to database...</span>
+              ) : isRecording ? (
+                <span>&gt; Recording audio (speech-to-text active)...</span>
+              ) : isTranscribing ? (
+                <span>&gt; Processing transcription...</span>
               ) : (
                 <span>&gt; Ready to submit</span>
               )}
@@ -550,7 +675,7 @@ Troubleshooting:
         </div>
 
         {/* Terminal footer */}
-        <div className="bg-green-900/20 border-t border-green-400/30 px-4 py-2 text-xs text-green-400/50">
+        <div className="bg-white/5 border-t border-white/30 px-4 py-2 text-xs text-white/60">
           {isProcessing ? (
             <span>&gt; Processing memory...</span>
           ) : (
@@ -561,10 +686,10 @@ Troubleshooting:
 
       {/* ESC key handler */}
       <div
-        className="absolute top-4 right-4 text-green-400/50 text-xs font-mono cursor-pointer hover:text-green-400 transition-colors"
+        className="absolute top-4 right-4 text-white text-sm font-mono cursor-pointer hover:opacity-70 transition-opacity"
         onClick={() => navigate('/')}
       >
-        [ESC] Cancel
+        [ESC] Cancel and return home
       </div>
     </div>
   );

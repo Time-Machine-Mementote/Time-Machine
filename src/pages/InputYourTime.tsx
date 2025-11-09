@@ -31,21 +31,22 @@ export default function InputYourTime() {
   const mapContainer = useRef<HTMLDivElement>(null);
   const map = useRef<mapboxgl.Map | null>(null);
   const pinMarker = useRef<mapboxgl.Marker | null>(null);
+  const navigateTimeout = useRef<number | null>(null);
+  const hasClickedRef = useRef(false);
   const navigate = useNavigate();
 
-  // Hide cursor on mouse move and show map
+  // Reveal map after initial click
   useEffect(() => {
-    let hasMoved = false;
-    const handleMouseMove = () => {
-      if (!hasMoved) {
-        hasMoved = true;
-        setShowCursor(false);
-        setTimeout(() => setShowMap(true), 200);
-      }
+    const handleInitialClick = () => {
+      if (hasClickedRef.current) return;
+      hasClickedRef.current = true;
+      setShowCursor(false);
+      setTimeout(() => setShowMap(true), 200);
+      window.removeEventListener('click', handleInitialClick);
     };
 
-    window.addEventListener('mousemove', handleMouseMove);
-    return () => window.removeEventListener('mousemove', handleMouseMove);
+    window.addEventListener('click', handleInitialClick);
+    return () => window.removeEventListener('click', handleInitialClick);
   }, []);
 
   // Initialize map when it should be shown
@@ -186,19 +187,27 @@ export default function InputYourTime() {
           .setLngLat([lng, lat])
           .addTo(map.current!);
 
-        // Navigate to terminal page after pin placement
-        setTimeout(() => {
+        if (navigateTimeout.current) {
+          window.clearTimeout(navigateTimeout.current);
+        }
+
+        // Navigate to terminal page after holding pin briefly
+        navigateTimeout.current = window.setTimeout(() => {
           navigate('/terminal', { 
             state: { 
               location: { lat, lng } 
             } 
           });
-        }, 300);
+        }, 3000);
       };
 
       map.current.on('click', handleMapClick);
 
       return () => {
+        if (navigateTimeout.current) {
+          window.clearTimeout(navigateTimeout.current);
+          navigateTimeout.current = null;
+        }
         if (pinMarker.current) {
           pinMarker.current.remove();
         }
@@ -214,7 +223,7 @@ export default function InputYourTime() {
   }, [showMap, navigate]);
 
   return (
-    <div className="relative w-full h-screen bg-black text-green-400 font-mono overflow-hidden">
+    <div className="relative w-full h-screen bg-black text-white font-mono overflow-hidden">
       {/* Terminal-style cursor overlay */}
       {showCursor && (
         <div 
@@ -225,7 +234,7 @@ export default function InputYourTime() {
             transform: 'translate(-50%, -50%)',
           }}
         >
-          <div className="text-6xl font-mono text-green-400 animate-pulse">
+          <div className="text-6xl font-mono text-white animate-pulse">
             &gt;
           </div>
         </div>
@@ -235,11 +244,11 @@ export default function InputYourTime() {
       {!showMap && (
         <div className="absolute inset-0 flex items-center justify-center z-10">
           <div className="text-center">
-            <div className="text-4xl md:text-6xl font-mono text-green-400 mb-4 animate-pulse">
+            <div className="text-4xl md:text-6xl font-mono text-white mb-4 animate-pulse">
               INPUT YOUR TIME
             </div>
-            <div className="text-xl md:text-2xl font-mono text-green-500/70 mt-4">
-              &gt; move cursor to begin
+            <div className="text-xl md:text-2xl font-mono text-white/70 mt-4">
+              &gt; Click to continue.
             </div>
           </div>
         </div>
@@ -251,7 +260,7 @@ export default function InputYourTime() {
           <div ref={mapContainer} className="w-full h-full" />
           {!pinLocation && (
             <div className="absolute bottom-8 left-1/2 transform -translate-x-1/2 z-20">
-              <div className="bg-black/80 border border-green-400 px-6 py-3 rounded font-mono text-green-400 text-sm">
+              <div className="bg-black/80 border border-white px-6 py-3 rounded font-mono text-white text-sm">
                 &gt; click on campus to place pin
               </div>
             </div>
@@ -260,8 +269,8 @@ export default function InputYourTime() {
       )}
 
       {/* Terminal-style header */}
-      <div className="absolute top-0 left-0 right-0 z-30 bg-black/90 border-b border-green-400/30 px-4 py-2">
-        <div className="font-mono text-xs text-green-400/70">
+      <div className="absolute top-0 left-0 right-0 z-30 bg-black/90 border-b border-white/30 px-4 py-2">
+        <div className="font-mono text-xs text-white/70">
           TIME_MACHINE.EXE v2.0 | STATUS: READY | {new Date().toLocaleTimeString()}
         </div>
       </div>
