@@ -33,6 +33,13 @@ export default function TerminalInput() {
   const baseTextRef = useRef('');
   const finalTranscriptRef = useRef('');
   const isRecordingRef = useRef(false);
+  const audioBlobRef = useRef<Blob | null>(null);
+  const stopPromiseResolver = useRef<((blob: Blob | null) => void) | null>(null);
+
+  const updateAudioBlob = (blob: Blob | null) => {
+    audioBlobRef.current = blob;
+    setAudioBlob(blob);
+  };
 
   // Check Supabase connection on mount
   useEffect(() => {
@@ -234,6 +241,7 @@ export default function TerminalInput() {
       
       mediaRecorderRef.current = mediaRecorder;
       chunksRef.current = [];
+      updateAudioBlob(null);
 
       mediaRecorder.ondataavailable = (event) => {
         if (event.data.size > 0) {
@@ -243,8 +251,12 @@ export default function TerminalInput() {
 
       mediaRecorder.onstop = () => {
         const audioBlob = new Blob(chunksRef.current, { type: 'audio/webm' });
-        setAudioBlob(audioBlob);
+        updateAudioBlob(audioBlob);
         stream.getTracks().forEach(track => track.stop());
+        if (stopPromiseResolver.current) {
+          stopPromiseResolver.current(audioBlob);
+          stopPromiseResolver.current = null;
+        }
       };
 
       mediaRecorder.start(1000);
@@ -261,32 +273,51 @@ export default function TerminalInput() {
         }
       }
       setIsRecording(true);
+      isRecordingRef.current = true;
     } catch (error) {
       console.error('Error starting recording:', error);
       toast.error('Could not access microphone. Please check permissions.');
     }
   };
 
-  const stopRecording = () => {
-    if (mediaRecorderRef.current && isRecording) {
-      mediaRecorderRef.current.stop();
-      setIsRecording(false);
-    }
-    if (recognitionRef.current && isTranscribing) {
+  const stopRecording = async (): Promise<Blob | null> => {
+    if (recognitionRef.current && (isTranscribing || isRecording)) {
       try {
         recognitionRef.current.stop();
       } catch (error) {
         console.warn('Failed to stop speech recognition:', error);
-      } finally {
-        setIsTranscribing(false);
       }
     }
+
+    if (mediaRecorderRef.current && isRecording) {
+      const recorder = mediaRecorderRef.current;
+      const stopPromise = new Promise<Blob | null>((resolve) => {
+        stopPromiseResolver.current = resolve;
+      });
+      recorder.stop();
+      setIsRecording(false);
+      isRecordingRef.current = false;
+      const blob = await stopPromise;
+      if (finalTranscriptRef.current) {
+        const combined = `${baseTextRef.current}${finalTranscriptRef.current}`.replace(/\s+/g, ' ').trim();
+        if (combined) {
+          setText(combined);
+        }
+      }
+      setIsTranscribing(false);
+      return blob;
+    }
+
+    setIsRecording(false);
+    isRecordingRef.current = false;
+    setIsTranscribing(false);
     if (finalTranscriptRef.current) {
       const combined = `${baseTextRef.current}${finalTranscriptRef.current}`.replace(/\s+/g, ' ').trim();
       if (combined) {
         setText(combined);
       }
     }
+    return audioBlobRef.current;
   };
 
   // Handle Enter key submission
@@ -298,8 +329,15 @@ export default function TerminalInput() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+
+    if (isRecording) {
+      toast.info('Finishing recording...');
+      await stopRecording();
+    }
+
+    const capturedAudioBlob = audioBlobRef.current;
     
-    if (!text.trim() && !audioBlob) {
+    if (!text.trim() && !capturedAudioBlob) {
       toast.error('Please enter text or record audio');
       return;
     }
@@ -325,12 +363,12 @@ export default function TerminalInput() {
 
       // Upload audio if available (works even without userId)
       let audioUrl: string | null = null;
-      if (audioBlob) {
+      if (capturedAudioBlob) {
         try {
           const tempMemoryId = crypto.randomUUID();
           // Try to upload - if no userId, use a temporary one
           const uploadUserId = userId || 'exhibition-user-' + Date.now();
-          audioUrl = await uploadAudioToStorage(audioBlob, tempMemoryId, uploadUserId);
+          audioUrl = await uploadAudioToStorage(capturedAudioBlob, tempMemoryId, uploadUserId);
           if (!audioUrl) {
             console.warn('Audio upload failed, but continuing...');
             toast.warning('Memory created but audio upload failed');
@@ -376,7 +414,7 @@ export default function TerminalInput() {
 
       // Create memory - SIMPLIFIED, no complex extraction
       // Ensure we have a valid text value (required field)
-      const memoryText = text.trim() || (audioBlob ? '[Voice memo recorded]' : '[Empty memory]');
+      const memoryText = text.trim() || (capturedAudioBlob ? '[Voice memo recorded]' : '[Empty memory]');
       
       // Add timeout wrapper to catch network errors
       const insertTimeout = new Promise((_, reject) =>
@@ -609,7 +647,13 @@ Troubleshooting:
                 {!audioBlob ? (
                   <button
                     type="button"
-                    onClick={isRecording ? stopRecording : startRecording}
+                    onClick={async () => {
+                      if (isRecording) {
+                        await stopRecording();
+                      } else {
+                        await startRecording();
+                      }
+                    }}
                     disabled={isProcessing}
                     className={`px-4 py-2 border border-white text-white font-mono hover:bg-white hover:text-black transition-all disabled:opacity-50 ${
                       isRecording ? 'bg-white/20 text-white animate-pulse' : ''
@@ -622,7 +666,7 @@ Troubleshooting:
                     <span className="text-white/70 font-mono text-sm">✓ Audio recorded</span>
                     <button
                       type="button"
-                      onClick={() => setAudioBlob(null)}
+                      onClick={() => updateAudioBlob(null)}
                       disabled={isProcessing}
                       className="px-3 py-1 border border-white text-white font-mono hover:bg-white hover:text-black text-sm disabled:opacity-50"
                     >
@@ -652,7 +696,7 @@ Troubleshooting:
             <div className="border-t border-white/30 pt-4">
               <button
                 type="submit"
-                disabled={isProcessing || (!text.trim() && !audioBlob)}
+                disabled={isProcessing || isRecording || (!text.trim() && !audioBlob)}
                 className="w-full px-6 py-3 border-2 border-white text-white font-mono hover:bg-white hover:text-black transition-all disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 {isProcessing ? 'PROCESSING...' : 'SUBMIT (or Ctrl+Enter)'}
