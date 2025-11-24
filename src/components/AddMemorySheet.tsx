@@ -132,7 +132,7 @@ export function AddMemorySheet({ isOpen, onClose, userLocation, userId }: AddMem
 
     map.current = new mapboxgl.Map({
       container: mapPickerContainer.current,
-      style: 'mapbox://styles/mapbox/streets-v12',
+      style: 'mapbox://styles/glalonde5/cmha0urx900rc01sre282c9pw',
       center: userLocation ? [userLocation.lng, userLocation.lat] : [-122.2585, 37.8721],
       zoom: 15,
     });

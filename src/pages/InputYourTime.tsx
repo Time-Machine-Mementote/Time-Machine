@@ -103,7 +103,7 @@ export default function InputYourTime() {
       // Try to create map with error handling
       const mapConfig = {
         container: mapContainer.current,
-        style: 'mapbox://styles/mapbox/streets-v12',
+        style: 'mapbox://styles/glalonde5/cmha0urx900rc01sre282c9pw',
         center: BERKELEY_CAMPUS_CENTER,
         zoom: BERKELEY_CAMPUS_ZOOM,
         pitch: 0,

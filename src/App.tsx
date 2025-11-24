@@ -8,6 +8,7 @@ import NotFound from "./pages/NotFound";
 import InputYourTime from "./pages/InputYourTime";
 import TerminalInput from "./pages/TerminalInput";
 import Receipt from "./pages/Receipt";
+import CurrentExperienceScreen from "./pages/CurrentExperienceScreen";
 import { useEffect, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
 
@@ -41,6 +42,7 @@ const App = () => {
             <Route path="/terminal" element={<TerminalInput />} />
             <Route path="/receipt" element={<Receipt />} />
             <Route path="/map" element={<MapScreen userId={user?.id} />} />
+            <Route path="/current" element={<CurrentExperienceScreen />} />
             <Route path="*" element={<NotFound />} />
           </Routes>
         </BrowserRouter>
