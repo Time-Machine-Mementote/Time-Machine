@@ -85,7 +85,27 @@ export function AuthGuard({ children }: AuthGuardProps) {
       }
     } catch (error) {
       console.error('Auth error details:', error)
-      const errorMessage = error instanceof Error ? error.message : 'An error occurred'
+      
+      let errorMessage = 'An error occurred'
+      
+      if (error instanceof Error) {
+        // Check for network errors
+        if (error.message.includes('Failed to fetch') || 
+            error.message.includes('NetworkError') ||
+            error.message.includes('Network request failed')) {
+          errorMessage = 'Network error: Unable to connect to server. Please check your internet connection and try again.'
+          console.error('Network error detected - this may be caused by:', {
+            serviceWorker: 'Check if service worker is interfering',
+            cors: 'Check CORS settings in Supabase',
+            url: import.meta.env.VITE_SUPABASE_URL || 'Not set'
+          })
+        } else {
+          errorMessage = error.message
+        }
+      } else if (typeof error === 'object' && error !== null && 'message' in error) {
+        errorMessage = String(error.message)
+      }
+      
       console.error('Error message:', errorMessage)
       toast.error(errorMessage)
     } finally {
