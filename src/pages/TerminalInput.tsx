@@ -367,7 +367,7 @@ export default function TerminalInput() {
         try {
           const tempMemoryId = crypto.randomUUID();
           // Try to upload - if no userId, use a temporary one
-          const uploadUserId = userId || 'exhibition-user-' + Date.now();
+          const uploadUserId = userId || 'exhibition-user-' + crypto.randomUUID();
           audioUrl = await uploadAudioToStorage(capturedAudioBlob, tempMemoryId, uploadUserId);
           if (!audioUrl) {
             console.warn('Audio upload failed, but continuing...');

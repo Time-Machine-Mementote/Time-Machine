@@ -4,6 +4,7 @@ import { useNavigate } from 'react-router-dom';
 import mapboxgl from 'mapbox-gl';
 import 'mapbox-gl/dist/mapbox-gl.css';
 import { BERKELEY_CAMPUS_CENTER, BERKELEY_CAMPUS_ZOOM } from '@/types/memory';
+import { toast } from 'sonner';
 
 const MAPBOX_TOKEN = import.meta.env.VITE_MAPBOX_TOKEN;
 
@@ -67,14 +68,14 @@ export default function InputYourTime() {
 
     if (!runtimeToken) {
       console.error('Mapbox token not found');
-      alert('Mapbox token not configured.\n\nPlease:\n1. Make sure .env.local file exists in project root\n2. It contains: VITE_MAPBOX_TOKEN=pk.eyJ...\n3. Restart the dev server completely (stop and start npm run dev)\n4. Hard refresh browser (Ctrl+Shift+R)');
+      toast.error('Mapbox token not configured. Please check .env.local file and restart the dev server.');
       return;
     }
 
     // Validate token format
     if (!runtimeToken.startsWith('pk.')) {
       console.error('Invalid token format:', runtimeToken.substring(0, 10));
-      alert('Invalid Mapbox token format. Token should start with "pk."\n\nPlease check your .env.local file.');
+      toast.error('Invalid Mapbox token format. Token should start with "pk."');
       return;
     }
 
