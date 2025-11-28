@@ -19,15 +19,25 @@ export function AuthGuard({ children }: AuthGuardProps) {
 
   useEffect(() => {
     // Get initial session
-    supabase.auth.getSession().then(({ data: { session } }) => {
-      setUser(session?.user ?? null)
-      setLoading(false)
-    })
+    supabase.auth.getSession()
+      .then(({ data: { session }, error }) => {
+        if (error) {
+          console.error('Error getting session:', error)
+        }
+        console.log('Initial session:', session ? 'Found' : 'None')
+        setUser(session?.user ?? null)
+        setLoading(false)
+      })
+      .catch((error) => {
+        console.error('Failed to get session:', error)
+        setLoading(false)
+      })
 
     // Listen for auth changes
     const {
       data: { subscription },
-    } = supabase.auth.onAuthStateChange((_event, session) => {
+    } = supabase.auth.onAuthStateChange((event, session) => {
+      console.log('Auth state changed:', event, session ? 'Session found' : 'No session')
       setUser(session?.user ?? null)
     })
 
@@ -39,8 +49,10 @@ export function AuthGuard({ children }: AuthGuardProps) {
     setAuthLoading(true)
 
     try {
+      console.log('Attempting authentication...', { isSignUp, email: email.substring(0, 5) + '...' })
+      
       if (isSignUp) {
-        const { error } = await supabase.auth.signUp({
+        const { data, error } = await supabase.auth.signUp({
           email,
           password,
           options: {
@@ -49,18 +61,33 @@ export function AuthGuard({ children }: AuthGuardProps) {
             },
           },
         })
-        if (error) throw error
+        
+        console.log('Sign up response:', { data, error })
+        
+        if (error) {
+          console.error('Sign up error:', error)
+          throw error
+        }
         toast.success('Check your email for the confirmation link!')
       } else {
-        const { error } = await supabase.auth.signInWithPassword({
+        const { data, error } = await supabase.auth.signInWithPassword({
           email,
           password,
         })
-        if (error) throw error
+        
+        console.log('Sign in response:', { data: data ? 'Success' : 'No data', error })
+        
+        if (error) {
+          console.error('Sign in error:', error)
+          throw error
+        }
         // Removed welcome back toast
       }
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : 'An error occurred')
+      console.error('Auth error details:', error)
+      const errorMessage = error instanceof Error ? error.message : 'An error occurred'
+      console.error('Error message:', errorMessage)
+      toast.error(errorMessage)
     } finally {
       setAuthLoading(false)
     }
