@@ -7,14 +7,32 @@ const SUPABASE_PUBLISHABLE_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY || "eyJh
 
 // Enhanced logging for debugging
 if (typeof window !== 'undefined') {
-  console.log('Supabase client config:', {
+  const isVercel = window.location.hostname.includes('vercel.app');
+  const envUrl = import.meta.env.VITE_SUPABASE_URL;
+  const envKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
+  
+  console.log('🔍 Supabase client config:', {
     url: SUPABASE_URL,
     key: SUPABASE_PUBLISHABLE_KEY ? SUPABASE_PUBLISHABLE_KEY.substring(0, 20) + '...' : 'MISSING',
-    envUrl: import.meta.env.VITE_SUPABASE_URL,
-    envKey: import.meta.env.VITE_SUPABASE_ANON_KEY ? 'Present' : 'Missing',
+    envUrl: envUrl || 'NOT SET - Using fallback',
+    envKey: envKey ? 'Present' : 'Missing - Using fallback',
     isProduction: import.meta.env.PROD,
+    isVercel: isVercel,
     hostname: window.location.hostname
   });
+  
+  // Warn if on Vercel and using fallback values
+  if (isVercel && (!envUrl || !envKey)) {
+    console.error('⚠️ VERCEL DEPLOYMENT WARNING:', {
+      issue: 'Environment variables not set in Vercel',
+      action: 'Go to Vercel Dashboard > Settings > Environment Variables',
+      required: ['VITE_SUPABASE_URL', 'VITE_SUPABASE_ANON_KEY'],
+      current: {
+        usingFallbackUrl: !envUrl,
+        usingFallbackKey: !envKey
+      }
+    });
+  }
 }
 
 // Validate configuration

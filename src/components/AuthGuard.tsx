@@ -18,6 +18,34 @@ export function AuthGuard({ children }: AuthGuardProps) {
   const [authLoading, setAuthLoading] = useState(false)
 
   useEffect(() => {
+    // Test Supabase connection on mount (especially for Vercel)
+    const testConnection = async () => {
+      const supabaseUrl = import.meta.env.VITE_SUPABASE_URL || 'https://iwwvjecrvgrdyptxhnwj.supabase.co';
+      const isVercel = window.location.hostname.includes('vercel.app');
+      
+      if (isVercel) {
+        console.log('🔍 Testing Supabase connection on Vercel...');
+        try {
+          const response = await fetch(`${supabaseUrl}/rest/v1/`, {
+            method: 'HEAD',
+            headers: {
+              'apikey': import.meta.env.VITE_SUPABASE_ANON_KEY || '',
+            }
+          });
+          console.log('✅ Connection test result:', response.status, response.statusText);
+        } catch (error) {
+          console.error('❌ Connection test failed:', error);
+          console.error('This may indicate:', {
+            envVars: 'Environment variables not set in Vercel',
+            cors: 'CORS not configured in Supabase',
+            network: 'Network connectivity issue'
+          });
+        }
+      }
+    };
+    
+    testConnection();
+    
     // Get initial session
     supabase.auth.getSession()
       .then(({ data: { session }, error }) => {
@@ -127,14 +155,28 @@ export function AuthGuard({ children }: AuthGuardProps) {
             error.message.includes('NetworkError') ||
             error.message.includes('Network request failed') ||
             error.message.includes('Load failed')) {
-          errorMessage = 'Network error: Unable to connect to server. Please check your internet connection and try again.'
+          
+          const isVercel = window.location.hostname.includes('vercel.app');
+          const envUrl = import.meta.env.VITE_SUPABASE_URL;
+          const envKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
+          
+          if (isVercel && (!envUrl || !envKey)) {
+            errorMessage = 'Configuration Error: Environment variables not set in Vercel. Please configure VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY in Vercel Dashboard > Settings > Environment Variables, then redeploy.'
+          } else {
+            errorMessage = 'Network error: Unable to connect to server. Please check your internet connection and try again.'
+          }
+          
           console.error('Network error detected - troubleshooting info:', {
+            isVercel: isVercel,
+            envUrlSet: !!envUrl,
+            envKeySet: !!envKey,
             serviceWorker: 'Check DevTools > Application > Service Workers',
             cors: 'Check Supabase Dashboard > Settings > API > CORS',
-            url: import.meta.env.VITE_SUPABASE_URL || 'Not set',
-            keyPresent: !!import.meta.env.VITE_SUPABASE_ANON_KEY,
+            url: envUrl || 'Not set - using fallback',
+            keyPresent: !!envKey,
             hostname: window.location.hostname,
-            protocol: window.location.protocol
+            protocol: window.location.protocol,
+            troubleshooting: isVercel ? 'See VERCEL_DEPLOYMENT.md for setup instructions' : 'Check network connection'
           })
           
           // Try to unregister service worker if it exists

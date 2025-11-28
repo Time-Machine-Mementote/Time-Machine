@@ -37,19 +37,22 @@ self.addEventListener('activate', (event) => {
 
 // Fetch event - serve from cache, fallback to network
 self.addEventListener('fetch', (event) => {
+  // CRITICAL: Never intercept Supabase requests - they must go directly to network
   const url = new URL(event.request.url);
   const requestUrl = event.request.url.toLowerCase();
+  const hostname = url.hostname.toLowerCase();
   
-  // Skip service worker for:
-  // 1. Supabase API requests (auth, database, storage, etc.) - CRITICAL
-  if (url.hostname.includes('supabase.co') || 
-      url.hostname.includes('supabase.io') ||
+  // Skip service worker for ALL Supabase-related requests - CRITICAL FOR AUTH
+  if (hostname.includes('supabase.co') || 
+      hostname.includes('supabase.io') ||
       requestUrl.includes('supabase') ||
       requestUrl.includes('/auth/v1/') ||
       requestUrl.includes('/rest/v1/') ||
       requestUrl.includes('/storage/v1/') ||
-      requestUrl.includes('/functions/v1/')) {
+      requestUrl.includes('/functions/v1/') ||
+      requestUrl.includes('iwwvjecrvgrdyptxhnwj')) { // Your specific Supabase project
     // DO NOT intercept - let browser handle directly
+    // This is critical for authentication to work
     return;
   }
   
