@@ -5,34 +5,122 @@ import { PRIORITY_WEIGHTS } from '@/types/memory';
 export class AudioQueue {
   private queue: AudioQueueItem[] = [];
   private currentlyPlaying: AudioQueueItem | null = null;
+  private currentlyPlaying2: AudioQueueItem | null = null; // Second audio track
   private lastPlayedTimes: Map<string, number> = new Map();
+  private lastPlayedSegments: Map<string, number> = new Map(); // Track which segment was last played for each memory
   private audioElement: HTMLAudioElement | null = null;
-  private isMuted = false;
-  private cooldownMs = 90000; // 90 seconds default cooldown
+  private audioElement2: HTMLAudioElement | null = null; // Second audio element
+  private isMuted = true; // Start muted - user must click Output to start
+  private cooldownMs = 15000; // 15 seconds default cooldown (reduced from 90s)
+  private segmentDuration = 5; // 5 seconds per segment
+  private segmentTimeout: NodeJS.Timeout | null = null;
+  private segmentTimeout2: NodeJS.Timeout | null = null; // Second timeout
 
   constructor() {
+    // Initialize first audio element
     this.audioElement = new Audio();
-    this.audioElement.preload = 'none';
+    this.audioElement.preload = 'auto';
+    this.audioElement.crossOrigin = 'anonymous';
     
+    // Initialize second audio element
+    this.audioElement2 = new Audio();
+    this.audioElement2.preload = 'auto';
+    this.audioElement2.crossOrigin = 'anonymous';
+    
+    // Handle page visibility changes to maintain playback
+    document.addEventListener('visibilitychange', () => {
+      if (!document.hidden && !this.isMuted) {
+        if (this.currentlyPlaying && this.audioElement && this.audioElement.paused) {
+          this.audioElement.play().catch(err => {
+            console.warn('Failed to resume audio 1 after visibility change:', err);
+          });
+        }
+        if (this.currentlyPlaying2 && this.audioElement2 && this.audioElement2.paused) {
+          this.audioElement2.play().catch(err => {
+            console.warn('Failed to resume audio 2 after visibility change:', err);
+          });
+        }
+      }
+    });
+    
+    // Handle page unload - ensure audio continues if possible
+    window.addEventListener('beforeunload', () => {
+      // Audio should continue playing in background if Media Session is set up
+      if ((this.currentlyPlaying || this.currentlyPlaying2) && 'mediaSession' in navigator) {
+        // Media Session API will handle lock screen controls
+      }
+    });
+    
+    // First audio element events
     this.audioElement.addEventListener('ended', () => {
       this.currentlyPlaying = null;
+      if (this.segmentTimeout) {
+        clearTimeout(this.segmentTimeout);
+        this.segmentTimeout = null;
+      }
       this.playNext();
+    });
+
+    this.audioElement.addEventListener('loadedmetadata', () => {
+      if (this.currentlyPlaying && this.audioElement) {
+        this.handleSegmentPlayback(this.audioElement, this.currentlyPlaying, 1);
+      }
     });
 
     this.audioElement.addEventListener('error', (error) => {
-      console.error('Audio playback error:', error);
+      console.error('Audio 1 playback error:', error);
       this.currentlyPlaying = null;
+      if (this.segmentTimeout) {
+        clearTimeout(this.segmentTimeout);
+        this.segmentTimeout = null;
+      }
       this.playNext();
     });
+
+    // Second audio element events
+    this.audioElement2.addEventListener('ended', () => {
+      this.currentlyPlaying2 = null;
+      if (this.segmentTimeout2) {
+        clearTimeout(this.segmentTimeout2);
+        this.segmentTimeout2 = null;
+      }
+      this.playNext();
+    });
+
+    this.audioElement2.addEventListener('loadedmetadata', () => {
+      if (this.currentlyPlaying2 && this.audioElement2) {
+        this.handleSegmentPlayback(this.audioElement2, this.currentlyPlaying2, 2);
+      }
+    });
+
+    this.audioElement2.addEventListener('error', (error) => {
+      console.error('Audio 2 playback error:', error);
+      this.currentlyPlaying2 = null;
+      if (this.segmentTimeout2) {
+        clearTimeout(this.segmentTimeout2);
+        this.segmentTimeout2 = null;
+      }
+      this.playNext();
+    });
+
+    // Set up Media Session API for lock screen controls
+    this.setupMediaSession();
   }
 
   // Add memory to queue with priority calculation
   addMemory(memory: Memory, userLocation: UserLocation, isOwner: boolean, isFriend: boolean) {
+    // Skip if memory doesn't have audio
+    if (!memory.audio_url) {
+      console.log('Skipping memory without audio_url:', memory.id);
+      return;
+    }
+
     const now = Date.now();
     const lastPlayed = this.lastPlayedTimes.get(memory.id) || 0;
     
     // Skip if still in cooldown
     if (now - lastPlayed < this.cooldownMs) {
+      console.log('Memory still in cooldown:', memory.id, 'cooldown remaining:', this.cooldownMs - (now - lastPlayed), 'ms');
       return;
     }
 
@@ -44,8 +132,11 @@ export class AudioQueue {
 
     // Skip if too far
     if (distance > memory.radius_m) {
+      console.log('Memory too far:', memory.id, 'distance:', distance, 'radius:', memory.radius_m);
       return;
     }
+
+    console.log('Adding memory to audio queue:', memory.id, 'audio_url:', memory.audio_url, 'distance:', distance);
 
     // Calculate priority
     let priority = 0;
@@ -73,8 +164,8 @@ export class AudioQueue {
     // Add new item
     this.queue.push(queueItem);
     
-    // Sort by priority (highest first)
-    this.queue.sort((a, b) => b.priority - a.priority);
+    // Randomize the queue order instead of sorting by priority
+    this.shuffleQueue();
 
     // Start playing if nothing is currently playing
     if (!this.currentlyPlaying && !this.isMuted) {
@@ -82,29 +173,235 @@ export class AudioQueue {
     }
   }
 
-  // Play the next item in queue
-  private playNext() {
-    if (this.isMuted || this.queue.length === 0) {
+  // Fisher-Yates shuffle algorithm to randomize queue order
+  private shuffleQueue() {
+    for (let i = this.queue.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [this.queue[i], this.queue[j]] = [this.queue[j], this.queue[i]];
+    }
+  }
+
+  // Set up Media Session API for lock screen controls
+  private setupMediaSession() {
+    if ('mediaSession' in navigator) {
+      // Set up action handlers
+      navigator.mediaSession.setActionHandler('play', () => {
+        if (this.audioElement && this.currentlyPlaying && this.isMuted) {
+          this.unmute();
+        }
+      });
+
+      navigator.mediaSession.setActionHandler('pause', () => {
+        if (this.audioElement && this.currentlyPlaying) {
+          this.mute();
+        }
+      });
+
+      navigator.mediaSession.setActionHandler('stop', () => {
+        this.mute();
+      });
+
+      navigator.mediaSession.setActionHandler('nexttrack', () => {
+        this.skip();
+      });
+
+      // Preload next track action (if supported)
+      if (navigator.mediaSession.setActionHandler.length > 0) {
+        try {
+          navigator.mediaSession.setActionHandler('previoustrack', () => {
+            // Not implemented - memories play in order
+          });
+        } catch (e) {
+          // Some browsers don't support all actions
+        }
+      }
+    }
+  }
+
+  // Update Media Session metadata
+  private updateMediaSession(item: AudioQueueItem | null) {
+    if ('mediaSession' in navigator && item) {
+      navigator.mediaSession.metadata = new MediaMetadata({
+        title: item.memory.summary || 'Memory',
+        artist: item.memory.place_name || 'Time Machine',
+        album: 'Time Machine Memories',
+        artwork: [
+          {
+            src: '/placeholder.svg',
+            sizes: '512x512',
+            type: 'image/svg+xml',
+          },
+        ],
+      });
+    } else if ('mediaSession' in navigator) {
+      // Clear metadata when nothing is playing
+      navigator.mediaSession.metadata = null;
+    }
+  }
+
+  // Handle 5-second segment playback
+  private handleSegmentPlayback(audioElement: HTMLAudioElement, item: AudioQueueItem, trackNumber: number) {
+    if (!item || !audioElement) return;
+
+    const memoryId = item.memory.id;
+    const duration = audioElement.duration;
+    
+    if (!duration || isNaN(duration)) {
+      console.warn(`Audio ${trackNumber} duration not available, playing full audio`);
       return;
     }
 
-    const nextItem = this.queue.shift();
-    if (!nextItem) return;
+    // Get the last played segment index for this memory (default to -1 for first play)
+    const lastSegment = this.lastPlayedSegments.get(memoryId) ?? -1;
+    
+    // Calculate next segment (rotate through segments)
+    const totalSegments = Math.ceil(duration / this.segmentDuration);
+    const nextSegment = (lastSegment + 1) % totalSegments;
+    const segmentStart = nextSegment * this.segmentDuration;
+    const segmentEnd = Math.min(segmentStart + this.segmentDuration, duration);
 
-    this.currentlyPlaying = nextItem;
-    this.lastPlayedTimes.set(nextItem.memory.id, Date.now());
+    // Update the segment index for next time
+    this.lastPlayedSegments.set(memoryId, nextSegment);
 
-    if (nextItem.memory.audio_url) {
-      this.audioElement!.src = nextItem.memory.audio_url;
-      this.audioElement!.play().catch(error => {
-        console.error('Failed to play audio:', error);
-        this.currentlyPlaying = null;
+    // Set the start time
+    audioElement.currentTime = segmentStart;
+
+    console.log(`Track ${trackNumber}: Playing segment ${nextSegment + 1}/${totalSegments} (${segmentStart.toFixed(1)}s - ${segmentEnd.toFixed(1)}s) for memory:`, memoryId);
+
+    // Set up timeout to stop after 5 seconds
+    const timeoutRef = trackNumber === 1 ? this.segmentTimeout : this.segmentTimeout2;
+    if (timeoutRef) {
+      clearTimeout(timeoutRef);
+    }
+
+    const timeout = setTimeout(() => {
+      if (audioElement && item) {
+        audioElement.pause();
+        console.log(`Track ${trackNumber}: Segment playback completed, moving to next`);
+        if (trackNumber === 1) {
+          this.currentlyPlaying = null;
+          this.segmentTimeout = null;
+        } else {
+          this.currentlyPlaying2 = null;
+          this.segmentTimeout2 = null;
+        }
         this.playNext();
-      });
+      }
+    }, this.segmentDuration * 1000);
+
+    if (trackNumber === 1) {
+      this.segmentTimeout = timeout;
     } else {
-      console.warn('No audio URL for memory:', nextItem.memory.id);
-      this.currentlyPlaying = null;
-      this.playNext();
+      this.segmentTimeout2 = timeout;
+    }
+  }
+
+  // Play the next item in queue (plays up to 2 simultaneously)
+  private playNext() {
+    if (this.isMuted) {
+      console.log('Audio queue is muted, skipping playback');
+      return;
+    }
+
+    // Try to fill both audio slots
+    while ((!this.currentlyPlaying || !this.currentlyPlaying2) && this.queue.length > 0) {
+      // Randomly select next item from queue
+      const randomIndex = Math.floor(Math.random() * this.queue.length);
+      const nextItem = this.queue.splice(randomIndex, 1)[0];
+      if (!nextItem || !nextItem.memory.audio_url) {
+        continue;
+      }
+
+      // Determine which track to use
+      const useTrack1 = !this.currentlyPlaying;
+      const audioElement = useTrack1 ? this.audioElement! : this.audioElement2!;
+      const trackNumber = useTrack1 ? 1 : 2;
+
+      if (useTrack1) {
+        this.currentlyPlaying = nextItem;
+      } else {
+        this.currentlyPlaying2 = nextItem;
+      }
+
+      this.lastPlayedTimes.set(nextItem.memory.id, Date.now());
+
+      console.log(`Track ${trackNumber}: Playing audio for memory:`, nextItem.memory.id, 'URL:', nextItem.memory.audio_url);
+      
+      // Set volume to a reasonable level
+      audioElement.volume = 0.7;
+      
+      audioElement.src = nextItem.memory.audio_url;
+      // Load the audio to start buffering immediately
+      audioElement.load();
+      
+      // Update Media Session metadata (use first track)
+      if (useTrack1) {
+        this.updateMediaSession(nextItem);
+      }
+      
+      // Try to play - browsers may require user interaction first
+      const playPromise = audioElement.play();
+      
+      if (playPromise !== undefined) {
+        playPromise
+          .then(() => {
+            console.log(`✅ Track ${trackNumber}: Audio playback started successfully for memory:`, nextItem.memory.id);
+            // Update playback state in Media Session
+            if ('mediaSession' in navigator && useTrack1) {
+              navigator.mediaSession.playbackState = 'playing';
+            }
+            // Handle segment playback once metadata is loaded
+            // If duration is already available, handle it immediately
+            if (audioElement.duration && !isNaN(audioElement.duration)) {
+              this.handleSegmentPlayback(audioElement, nextItem, trackNumber);
+            }
+          })
+          .catch(error => {
+            console.error(`❌ Track ${trackNumber}: Failed to play audio:`, error.name, error.message);
+            // If autoplay is blocked, we'll need user interaction
+            if (error.name === 'NotAllowedError' || error.name === 'NotSupportedError') {
+              console.warn(`⚠️ Track ${trackNumber}: Autoplay blocked. User interaction required. Adding back to queue.`);
+              // Add back to queue to try again
+              this.queue.push(nextItem);
+              if (useTrack1) {
+                this.currentlyPlaying = null;
+              } else {
+                this.currentlyPlaying2 = null;
+              }
+              if (useTrack1) {
+                this.updateMediaSession(null);
+              }
+            } else {
+              // Other errors - skip this item
+              console.error(`Track ${trackNumber}: Audio error details:`, error);
+              if (useTrack1) {
+                this.currentlyPlaying = null;
+              } else {
+                this.currentlyPlaying2 = null;
+              }
+              if (useTrack1) {
+                this.updateMediaSession(null);
+              }
+            }
+          });
+      } else {
+        // Fallback if play() does not return a promise
+        console.log(`Track ${trackNumber}: Audio play() did not return a promise, assuming it started`);
+        if ('mediaSession' in navigator && useTrack1) {
+          navigator.mediaSession.playbackState = 'playing';
+        }
+        if (audioElement.duration && !isNaN(audioElement.duration)) {
+          this.handleSegmentPlayback(audioElement, nextItem, trackNumber);
+        }
+      }
+    }
+
+    // If queue is empty and nothing is playing, don't clear media session
+    // Keep it ready for when new memories are added
+    if (this.queue.length === 0 && !this.currentlyPlaying && !this.currentlyPlaying2) {
+      console.log('Audio queue is empty, waiting for more memories...');
+      // Don't update media session - keep it ready
+      // The geofencing system will add more memories as user moves
     }
   }
 
@@ -126,11 +423,34 @@ export class AudioQueue {
     if (this.audioElement) {
       this.audioElement.pause();
     }
+    if (this.audioElement2) {
+      this.audioElement2.pause();
+    }
+    if ('mediaSession' in navigator) {
+      navigator.mediaSession.playbackState = 'paused';
+    }
   }
 
   unmute() {
     this.isMuted = false;
-    if (!this.currentlyPlaying) {
+    // Resume both audio tracks if they were playing
+    if (this.currentlyPlaying && this.audioElement) {
+      this.audioElement.play().catch(err => {
+        console.warn('Failed to resume audio 1:', err);
+        this.currentlyPlaying = null;
+      });
+    }
+    if (this.currentlyPlaying2 && this.audioElement2) {
+      this.audioElement2.play().catch(err => {
+        console.warn('Failed to resume audio 2:', err);
+        this.currentlyPlaying2 = null;
+      });
+    }
+    if ('mediaSession' in navigator) {
+      navigator.mediaSession.playbackState = 'playing';
+    }
+    // If nothing is playing, start playing
+    if (!this.currentlyPlaying && !this.currentlyPlaying2) {
       this.playNext();
     }
   }
@@ -139,7 +459,20 @@ export class AudioQueue {
     if (this.audioElement) {
       this.audioElement.pause();
     }
+    if (this.audioElement2) {
+      this.audioElement2.pause();
+    }
+    if (this.segmentTimeout) {
+      clearTimeout(this.segmentTimeout);
+      this.segmentTimeout = null;
+    }
+    if (this.segmentTimeout2) {
+      clearTimeout(this.segmentTimeout2);
+      this.segmentTimeout2 = null;
+    }
     this.currentlyPlaying = null;
+    this.currentlyPlaying2 = null;
+    this.updateMediaSession(null);
     this.playNext();
   }
 
@@ -148,7 +481,19 @@ export class AudioQueue {
     if (this.audioElement) {
       this.audioElement.pause();
     }
+    if (this.audioElement2) {
+      this.audioElement2.pause();
+    }
+    if (this.segmentTimeout) {
+      clearTimeout(this.segmentTimeout);
+      this.segmentTimeout = null;
+    }
+    if (this.segmentTimeout2) {
+      clearTimeout(this.segmentTimeout2);
+      this.segmentTimeout2 = null;
+    }
     this.currentlyPlaying = null;
+    this.currentlyPlaying2 = null;
   }
 
   getCurrentlyPlaying(): AudioQueueItem | null {

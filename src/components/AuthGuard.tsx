@@ -1,12 +1,8 @@
 import { useState, useEffect } from 'react'
 import { supabase } from '../integrations/supabase/client'
 import type { User } from '@supabase/supabase-js'
-import { Button } from './ui/button'
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from './ui/card'
-import { Input } from './ui/input'
-import { Label } from './ui/label'
 import { toast } from 'sonner'
-import { Loader2, Mail, Lock, User } from 'lucide-react'
+import { Loader2 } from 'lucide-react'
 
 interface AuthGuardProps {
   children: React.ReactNode
@@ -61,7 +57,7 @@ export function AuthGuard({ children }: AuthGuardProps) {
           password,
         })
         if (error) throw error
-        toast.success('Welcome back!')
+        // Removed welcome back toast
       }
     } catch (error) {
       toast.error(error instanceof Error ? error.message : 'An error occurred')
@@ -72,15 +68,17 @@ export function AuthGuard({ children }: AuthGuardProps) {
 
   const handleSignOut = async () => {
     await supabase.auth.signOut()
-    toast.success('Signed out successfully')
+    // Removed sign out toast
   }
 
   if (loading) {
     return (
-      <div className="min-h-screen flex items-center justify-center">
-        <div className="text-center">
-          <Loader2 className="w-8 h-8 animate-spin mx-auto mb-4" />
-          <p>Loading...</p>
+      <div className="min-h-screen flex items-center justify-center bg-black">
+        <div className="text-center terminal-container">
+          <div className="font-terminal text-white">
+            <span className="text-white">&gt;</span> INITIALIZING_SYSTEM
+            <span className="terminal-cursor"></span>
+          </div>
         </div>
       </div>
     )
@@ -88,126 +86,105 @@ export function AuthGuard({ children }: AuthGuardProps) {
 
   if (!user) {
     return (
-      <div className="min-h-screen flex items-center justify-center p-4">
-        <Card className="w-full max-w-md">
-          <CardHeader className="text-center">
-            <CardTitle className="text-2xl font-crimson">
-              {isSignUp ? 'Create Account' : 'Welcome Back'}
-            </CardTitle>
-            <CardDescription>
-              {isSignUp 
-                ? 'Sign up to start creating your memories' 
-                : 'Sign in to access your memories'
-              }
-            </CardDescription>
-          </CardHeader>
-          <CardContent>
-            <form onSubmit={handleAuth} className="space-y-4">
-              {isSignUp && (
-                <div className="space-y-2">
-                  <Label htmlFor="fullName">Full Name</Label>
-                  <div className="relative">
-                    <User className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-                    <Input
-                      id="fullName"
-                      type="text"
-                      placeholder="Your full name"
-                      value={fullName}
-                      onChange={(e) => setFullName(e.target.value)}
-                      className="pl-10"
-                      required={isSignUp}
-                    />
-                  </div>
-                </div>
-              )}
-              
-              <div className="space-y-2">
-                <Label htmlFor="email">Email</Label>
-                <div className="relative">
-                  <Mail className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-                  <Input
-                    id="email"
-                    type="email"
-                    placeholder="your@email.com"
-                    value={email}
-                    onChange={(e) => setEmail(e.target.value)}
-                    className="pl-10"
-                    required
-                  />
-                </div>
-              </div>
-
-              <div className="space-y-2">
-                <Label htmlFor="password">Password</Label>
-                <div className="relative">
-                  <Lock className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-                  <Input
-                    id="password"
-                    type="password"
-                    placeholder="••••••••"
-                    value={password}
-                    onChange={(e) => setPassword(e.target.value)}
-                    className="pl-10"
-                    required
-                  />
-                </div>
-              </div>
-
-              <Button 
-                type="submit" 
-                className="w-full" 
-                disabled={authLoading}
-              >
-                {authLoading ? (
-                  <>
-                    <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                    {isSignUp ? 'Creating Account...' : 'Signing In...'}
-                  </>
-                ) : (
-                  isSignUp ? 'Create Account' : 'Sign In'
-                )}
-              </Button>
-            </form>
-
-            <div className="mt-4 text-center">
-              <Button
-                variant="link"
-                onClick={() => setIsSignUp(!isSignUp)}
-                className="text-sm"
-              >
-                {isSignUp 
-                  ? 'Already have an account? Sign in' 
-                  : "Don't have an account? Sign up"
-                }
-              </Button>
+      <div className="min-h-screen flex items-center justify-center p-4 bg-black">
+        <div className="terminal-container w-full max-w-md">
+          <div className="mb-6">
+            <div className="font-terminal text-white mb-2">
+              <span className="text-white">&gt;</span> {isSignUp ? 'CREATE_ACCOUNT.EXE' : 'LOGIN.EXE'}
             </div>
-          </CardContent>
-        </Card>
+            <div className="font-terminal text-white text-sm">
+              {isSignUp 
+                ? 'Initializing user registration protocol...' 
+                : 'Accessing memory database...'
+              }
+            </div>
+          </div>
+          
+          <form onSubmit={handleAuth} className="space-y-4">
+            {isSignUp && (
+              <div className="space-y-2">
+                <label htmlFor="fullName" className="font-terminal text-white text-sm block">
+                  <span className="text-white">&gt;</span> FULL_NAME:
+                </label>
+                <input
+                  id="fullName"
+                  type="text"
+                  placeholder="Enter full name"
+                  value={fullName}
+                  onChange={(e) => setFullName(e.target.value)}
+                  className="w-full bg-black border border-white text-white font-terminal px-3 py-2 focus:outline-none focus:border-white"
+                  required={isSignUp}
+                />
+              </div>
+            )}
+            
+            <div className="space-y-2">
+              <label htmlFor="email" className="font-terminal text-white text-sm block">
+                <span className="text-white">&gt;</span> EMAIL:
+              </label>
+              <input
+                id="email"
+                type="email"
+                placeholder="user@domain.com"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                className="w-full bg-black border border-white text-white font-terminal px-3 py-2 focus:outline-none focus:border-white"
+                required
+              />
+            </div>
+
+            <div className="space-y-2">
+              <label htmlFor="password" className="font-terminal text-white text-sm block">
+                <span className="text-white">&gt;</span> PASSWORD:
+              </label>
+              <input
+                id="password"
+                type="password"
+                placeholder="••••••••"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                className="w-full bg-black border border-white text-white font-terminal px-3 py-2 focus:outline-none focus:border-white"
+                required
+              />
+            </div>
+
+            <button 
+              type="submit" 
+              className="w-full bg-white text-black font-terminal px-4 py-2 border-2 border-black hover:bg-black hover:text-white disabled:opacity-50 disabled:cursor-not-allowed transition-colors" 
+              disabled={authLoading}
+            >
+              {authLoading ? (
+                <>
+                  <span className="inline-block animate-pulse">PROCESSING</span>
+                  <span className="terminal-cursor"></span>
+                </>
+              ) : (
+                <span className="text-black">&gt;</span>
+              )} {isSignUp ? 'EXECUTE_CREATE_ACCOUNT' : 'EXECUTE_LOGIN'}
+            </button>
+          </form>
+
+          <div className="mt-4 text-center">
+            <button
+              onClick={() => setIsSignUp(!isSignUp)}
+              className="font-terminal text-white text-sm hover:underline"
+            >
+              {isSignUp 
+                ? '&gt; SWITCH_TO_LOGIN' 
+                : '&gt; SWITCH_TO_CREATE_ACCOUNT'
+              }
+            </button>
+          </div>
+        </div>
       </div>
     )
   }
 
   return (
-    <div>
-      {/* User info bar */}
-      <div className="bg-background/80 backdrop-blur-sm border-b border-border px-6 py-2">
-        <div className="max-w-6xl mx-auto flex items-center justify-between">
-          <div className="flex items-center gap-2">
-            <span className="text-sm text-muted-foreground">
-              Welcome, {user.user_metadata?.full_name || user.email}
-            </span>
-          </div>
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={handleSignOut}
-          >
-            Sign Out
-          </Button>
-        </div>
+    <div className="h-screen flex flex-col" style={{ height: '100dvh' }}>
+      <div className="flex-1 overflow-hidden min-h-0">
+        {children}
       </div>
-      
-      {children}
     </div>
   )
 } 

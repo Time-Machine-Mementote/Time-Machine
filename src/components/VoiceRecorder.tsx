@@ -5,9 +5,10 @@ import { Button } from '@/components/ui/button';
 interface VoiceRecorderProps {
   onRecordingComplete: (audioBlob: string) => void;
   existingRecording?: string;
+  onRecordingStateChange?: (isRecording: boolean) => void;
 }
 
-const VoiceRecorder = ({ onRecordingComplete, existingRecording }: VoiceRecorderProps) => {
+const VoiceRecorder = ({ onRecordingComplete, existingRecording, onRecordingStateChange }: VoiceRecorderProps) => {
   const [isRecording, setIsRecording] = useState(false);
   const [isPlaying, setIsPlaying] = useState(false);
   const [recordingTime, setRecordingTime] = useState(0);
@@ -20,6 +21,12 @@ const VoiceRecorder = ({ onRecordingComplete, existingRecording }: VoiceRecorder
 
   const startRecording = useCallback(async () => {
     try {
+      // Check if MediaRecorder is supported
+      if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+        alert('Your browser does not support audio recording. Please use a modern browser like Chrome, Firefox, or Edge.');
+        return;
+      }
+
       const stream = await navigator.mediaDevices.getUserMedia({ 
         audio: { 
           echoCancellation: true,
@@ -28,9 +35,16 @@ const VoiceRecorder = ({ onRecordingComplete, existingRecording }: VoiceRecorder
         } 
       });
       
-      const mediaRecorder = new MediaRecorder(stream, {
-        mimeType: 'audio/webm;codecs=opus'
-      });
+      // Check for supported mime types
+      let mimeType = 'audio/webm;codecs=opus';
+      if (!MediaRecorder.isTypeSupported(mimeType)) {
+        mimeType = 'audio/webm';
+        if (!MediaRecorder.isTypeSupported(mimeType)) {
+          mimeType = ''; // Let browser choose
+        }
+      }
+      
+      const mediaRecorder = new MediaRecorder(stream, mimeType ? { mimeType } : undefined);
       
       mediaRecorderRef.current = mediaRecorder;
       chunksRef.current = [];
@@ -58,15 +72,26 @@ const VoiceRecorder = ({ onRecordingComplete, existingRecording }: VoiceRecorder
       mediaRecorder.start(1000); // Collect data every second
       setIsRecording(true);
       setRecordingTime(0);
+      onRecordingStateChange?.(true);
 
       // Start timer
       timerRef.current = setInterval(() => {
         setRecordingTime(time => time + 1);
       }, 1000);
 
-    } catch (error) {
+    } catch (error: any) {
       console.error('Error starting recording:', error);
-      alert('Could not access microphone. Please check permissions.');
+      let errorMessage = 'Could not access microphone. ';
+      if (error.name === 'NotAllowedError' || error.name === 'PermissionDeniedError') {
+        errorMessage += 'Please allow microphone access in your browser settings.';
+      } else if (error.name === 'NotFoundError' || error.name === 'DevicesNotFoundError') {
+        errorMessage += 'No microphone found. Please connect a microphone.';
+      } else if (error.name === 'NotSupportedError') {
+        errorMessage += 'Your browser does not support audio recording.';
+      } else {
+        errorMessage += error.message || 'Please check your browser permissions.';
+      }
+      alert(errorMessage);
     }
   }, [onRecordingComplete]);
 
@@ -74,13 +99,14 @@ const VoiceRecorder = ({ onRecordingComplete, existingRecording }: VoiceRecorder
     if (mediaRecorderRef.current && isRecording) {
       mediaRecorderRef.current.stop();
       setIsRecording(false);
+      onRecordingStateChange?.(false);
       
       if (timerRef.current) {
         clearInterval(timerRef.current);
         timerRef.current = null;
       }
     }
-  }, [isRecording]);
+  }, [isRecording, onRecordingStateChange]);
 
   const playRecording = useCallback(() => {
     if (existingRecording && !audioRef.current) {
@@ -126,36 +152,22 @@ const VoiceRecorder = ({ onRecordingComplete, existingRecording }: VoiceRecorder
 
   return (
     <div className="glass-card p-6 space-y-4">
-      <div className="flex items-center justify-between">
-        <h3 className="text-lg font-crimson font-semibold text-foreground">
-          Voice Recording
-        </h3>
-        {(isRecording || hasRecording) && (
-          <span className="text-sm text-muted-foreground">
-            {formatTime(recordingTime)}
-          </span>
-        )}
-      </div>
-
       <div className="flex items-center gap-3">
         {!hasRecording ? (
           <Button
+            type="button"
             onClick={isRecording ? stopRecording : startRecording}
-            variant={isRecording ? "destructive" : "default"}
             size="lg"
-            className={`flex-1 ${isRecording ? 'animate-pulse-glow' : 'btn-ethereal'}`}
+            variant="outline"
+            className={`flex-1 font-robotic rounded-none border-2 ${
+              isRecording 
+                ? 'bg-white text-black border-black hover:bg-white hover:text-black' 
+                : 'bg-black text-white border-white hover:bg-black hover:text-white'
+            }`}
+            style={{ borderRadius: '0' }}
           >
-            {isRecording ? (
-              <>
-                <Square className="w-5 h-5 mr-2" />
-                Stop Recording
-              </>
-            ) : (
-              <>
-                <Mic className="w-5 h-5 mr-2" />
-                Start Recording
-              </>
-            )}
+            <Mic className="w-5 h-5 mr-2" />
+            record
           </Button>
         ) : (
           <>

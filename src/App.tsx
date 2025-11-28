@@ -9,6 +9,15 @@ import { useEffect, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import type { User } from "@supabase/supabase-js";
 
+// Register service worker for background audio support
+if ('serviceWorker' in navigator && import.meta.env.PROD) {
+  window.addEventListener('load', () => {
+    navigator.serviceWorker.register('/sw.js').catch(() => {
+      // Service worker registration is optional - fail silently
+    });
+  });
+}
+
 const App = () => {
   const [user, setUser] = useState<User | null>(null);
 
@@ -36,7 +45,8 @@ const App = () => {
         <BrowserRouter>
           <AuthGuard>
           <Routes>
-            <Route path="/" element={<MapScreen userId={user?.id} />} />
+            <Route path="/" element={<MapScreen userId={user?.id} showOverlay={true} />} />
+            <Route path="/map" element={<MapScreen userId={user?.id} showOverlay={false} />} />
             <Route path="*" element={<NotFound />} />
           </Routes>
           </AuthGuard>

@@ -5,6 +5,20 @@ import { audioQueue } from '@/utils/audioQueue';
 import type { Memory, UserLocation, GeofenceConfig } from '@/types/memory';
 import { DEFAULT_GEOFENCE_CONFIG } from '@/types/memory';
 
+// Type definition for Wake Lock API
+type WakeLockSentinel = {
+  released: boolean;
+  type: 'screen';
+  release(): Promise<void>;
+  addEventListener(type: 'release', listener: () => void): void;
+};
+
+interface NavigatorWithWakeLock {
+  wakeLock?: {
+    request(type: 'screen'): Promise<WakeLockSentinel>;
+  };
+}
+
 interface UseGeofencingOptions {
   config?: Partial<GeofenceConfig>;
   enabled?: boolean;
@@ -41,6 +55,7 @@ export function useGeofencing(options: UseGeofencingOptions = {}) {
   const watchIdRef = useRef<number | null>(null);
   const intervalRef = useRef<NodeJS.Timeout | null>(null);
   const lastCheckRef = useRef<number>(0);
+  const wakeLockRef = useRef<WakeLockSentinel | null>(null);
 
   // Update currently playing memory when audio queue changes
   useEffect(() => {
@@ -119,6 +134,17 @@ export function useGeofencing(options: UseGeofencingOptions = {}) {
         }
       }, finalConfig.sampleInterval);
 
+      // Request wake lock to keep device awake (optional, for better background support)
+      const nav = navigator as unknown as NavigatorWithWakeLock;
+      if (nav.wakeLock) {
+        try {
+          wakeLockRef.current = await nav.wakeLock.request('screen');
+          console.log('Wake lock acquired for background audio');
+        } catch (err) {
+          console.warn('Wake lock not available:', err);
+        }
+      }
+
     } catch (error) {
       console.error('Failed to start location tracking:', error);
       setState(prev => ({
@@ -138,6 +164,14 @@ export function useGeofencing(options: UseGeofencingOptions = {}) {
     if (intervalRef.current !== null) {
       clearInterval(intervalRef.current);
       intervalRef.current = null;
+    }
+
+    // Release wake lock
+    if (wakeLockRef.current) {
+      wakeLockRef.current.release().catch(() => {
+        // Ignore errors when releasing wake lock
+      });
+      wakeLockRef.current = null;
     }
 
     setState(prev => ({
@@ -178,12 +212,18 @@ export function useGeofencing(options: UseGeofencingOptions = {}) {
 
         // Check if within memory's radius
         if (distance <= memory.radius_m) {
-          // Determine relationship to user
-          const isOwner = userId ? memory.author_id === userId : false;
-          const isFriend = false; // TODO: Implement friendship checking
+          // Only add memories with audio URLs
+          if (memory.audio_url) {
+            // Determine relationship to user
+            const isOwner = userId ? memory.author_id === userId : false;
+            const isFriend = false; // TODO: Implement friendship checking
 
-          // Add to audio queue
-          audioQueue.addMemory(memory, location, isOwner, isFriend);
+            // Add to audio queue
+            console.log('Adding memory to queue - ID:', memory.id, 'Distance:', distance, 'Radius:', memory.radius_m, 'Audio URL:', memory.audio_url);
+            audioQueue.addMemory(memory, location, isOwner, isFriend);
+          } else {
+            console.log('Memory has no audio_url, skipping:', memory.id);
+          }
 
           // Record play if user is authenticated
           if (userId) {

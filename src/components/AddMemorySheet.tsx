@@ -1,175 +1,114 @@
 // Add Memory Sheet Component
-import React, { useState, useRef, useEffect } from 'react';
-import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from '@/components/ui/sheet';
-import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import { Textarea } from '@/components/ui/textarea';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Label } from '@/components/ui/label';
-import { Slider } from '@/components/ui/slider';
-import { Mic, MicOff, Send, Loader2, MapPin } from 'lucide-react';
+import React, { useState, useEffect, useRef } from 'react';
+import { Sheet, SheetContent } from '@/components/ui/sheet';
+import { Loader2 } from 'lucide-react';
 import { supabase } from '@/integrations/supabase/client';
 import { toast } from 'sonner';
 import type { UserLocation } from '@/types/memory';
-import mapboxgl from 'mapbox-gl';
-import 'mapbox-gl/dist/mapbox-gl.css';
+import VoiceRecorder from '@/components/VoiceRecorder';
+import { uploadAudioToStorage } from '@/utils/audioStorage';
 
 interface AddMemorySheetProps {
   isOpen: boolean;
   onClose: () => void;
   userLocation: UserLocation | null;
   userId?: string;
+  onRecordingStateChange?: (isRecording: boolean) => void;
 }
 
-export function AddMemorySheet({ isOpen, onClose, userLocation, userId }: AddMemorySheetProps) {
-  const [text, setText] = useState('');
-  const [privacy, setPrivacy] = useState<'private' | 'friends' | 'public'>('public');
-  const [radius, setRadius] = useState([30]);
-  const [isRecording, setIsRecording] = useState(false);
+export function AddMemorySheet({ isOpen, onClose, userLocation, userId, onRecordingStateChange }: AddMemorySheetProps) {
+  const [audioBlob, setAudioBlob] = useState<string>('');
   const [isProcessing, setIsProcessing] = useState(false);
-  const [placeName, setPlaceName] = useState('');
-  const [summary, setSummary] = useState('');
-  const [useCustomLocation, setUseCustomLocation] = useState(false);
-  const [customLat, setCustomLat] = useState('');
-  const [customLng, setCustomLng] = useState('');
-  const [showMapPicker, setShowMapPicker] = useState(false);
-  const [pickedLocation, setPickedLocation] = useState<{lat: number, lng: number} | null>(null);
-  const mapContainer = useRef<HTMLDivElement>(null);
-  const map = useRef<mapboxgl.Map | null>(null);
+  const [isRecording, setIsRecording] = useState(false);
+  const hasSubmittedRef = useRef(false);
 
-  // Simple name extraction function
-  const extractNames = (text: string): string[] => {
-    // Common name patterns - this is a simple implementation
-    const namePatterns = [
-      /\b[A-Z][a-z]+ [A-Z][a-z]+\b/g, // First Last
-      /\b[A-Z][a-z]+(?: [A-Z][a-z]+)*\b/g, // Names starting with capital letters
-    ];
-    
-    const names = new Set<string>();
-    
-    namePatterns.forEach(pattern => {
-      const matches = text.match(pattern);
-      if (matches) {
-        matches.forEach(match => {
-          // Filter out common words that aren't names
-          const commonWords = ['The', 'This', 'That', 'There', 'Then', 'They', 'When', 'Where', 'What', 'Why', 'How'];
-          if (!commonWords.includes(match.split(' ')[0])) {
-            names.add(match);
-          }
-        });
-      }
-    });
-    
-    return Array.from(names);
-  };
-
-  // Initialize map when map picker is shown
+  // Reset when sheet closes
   useEffect(() => {
-    if (!showMapPicker || !mapContainer.current) return;
-
-    const MAPBOX_TOKEN = import.meta.env.VITE_MAPBOX_TOKEN;
-    if (!MAPBOX_TOKEN) {
-      toast.error('Mapbox token not found');
-      return;
+    if (!isOpen) {
+      setAudioBlob('');
+      setIsProcessing(false);
+      hasSubmittedRef.current = false;
     }
+  }, [isOpen]);
 
-    mapboxgl.accessToken = MAPBOX_TOKEN;
-
-    map.current = new mapboxgl.Map({
-      container: mapContainer.current,
-      style: 'mapbox://styles/mapbox/streets-v12',
-      center: userLocation ? [userLocation.lng, userLocation.lat] : [-122.2585, 37.8721],
-      zoom: 15,
-    });
-
-    let marker: mapboxgl.Marker | null = null;
-
-    // Add click handler to pick location
-    map.current.on('click', (e) => {
-      const { lng, lat } = e.lngLat;
-      setPickedLocation({ lat, lng });
-      
-      // Remove existing marker
-      if (marker) {
-        marker.remove();
-      }
-      
-      // Add new marker at clicked location
-      marker = new mapboxgl.Marker({
-        color: '#ef4444', // Red color for the pin
-        scale: 1.2
-      })
-        .setLngLat([lng, lat])
-        .addTo(map.current!);
-      
-      toast.success(`Location picked: ${lat.toFixed(6)}, ${lng.toFixed(6)}`);
-    });
-
-    return () => {
-      if (marker) {
-        marker.remove();
-      }
-      if (map.current) {
-        map.current.remove();
-        map.current = null;
-      }
-    };
-  }, [showMapPicker]); // Removed userLocation dependency to prevent constant re-renders
-
-  // Clear picked location when map picker is closed
+  // Auto-submit when recording is complete (only if audioBlob is not empty)
   useEffect(() => {
-    if (!showMapPicker) {
-      setPickedLocation(null);
+    if (audioBlob && audioBlob.trim() && !isProcessing && !hasSubmittedRef.current) {
+      hasSubmittedRef.current = true;
+      handleSubmit();
+    } else if (!audioBlob || !audioBlob.trim()) {
+      // Reset the ref if recording is deleted
+      hasSubmittedRef.current = false;
     }
-  }, [showMapPicker]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [audioBlob]);
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    
-    if (!text.trim()) {
-      toast.error('Please enter some text for your memory');
-      return;
-    }
-
-    if (!placeName.trim()) {
-      toast.error('Please enter a place name');
+  const handleSubmit = async () => {
+    if (!audioBlob) {
       return;
     }
 
     setIsProcessing(true);
 
     try {
-      // Determine which location to use
-      let finalLat: number;
-      let finalLng: number;
-      
-      if (useCustomLocation && pickedLocation) {
-        finalLat = pickedLocation.lat;
-        finalLng = pickedLocation.lng;
-      } else if (userLocation) {
-        finalLat = userLocation.lat;
-        finalLng = userLocation.lng;
-      } else {
-        finalLat = 37.8721; // Default to Berkeley campus
-        finalLng = -122.2585;
+      // Determine location to use
+      const finalLat = userLocation?.lat || 37.8721; // Default to Berkeley campus
+      const finalLng = userLocation?.lng || -122.2585;
+
+      // Upload audio recording
+      let audioUrl: string | null = null;
+      if (audioBlob && userId) {
+        try {
+          // Convert base64 to Blob
+          const base64Match = audioBlob.match(/^data:([^;]+);base64,(.+)$/);
+          if (base64Match) {
+            const mimeType = base64Match[1];
+            const base64String = base64Match[2];
+            const byteCharacters = atob(base64String);
+            const byteNumbers = new Array(byteCharacters.length);
+            for (let i = 0; i < byteCharacters.length; i++) {
+              byteNumbers[i] = byteCharacters.charCodeAt(i);
+            }
+            const byteArray = new Uint8Array(byteNumbers);
+            const audioBlobFile = new Blob([byteArray], { type: mimeType });
+
+            // Generate temp ID for upload
+            const tempMemoryId = crypto.randomUUID();
+            audioUrl = await uploadAudioToStorage(audioBlobFile, tempMemoryId, userId);
+            
+            if (!audioUrl) {
+              toast.warning('Audio upload failed. Please try again.');
+              setIsProcessing(false);
+              return;
+            }
+          }
+        } catch (error) {
+          console.error('Error uploading audio:', error);
+          toast.error('Failed to upload audio. Please try again.');
+          setIsProcessing(false);
+          return;
+        }
       }
 
-      // Extract names from the memory text
-      const extractedNames = extractNames(text.trim());
+      // Generate a simple place name from location or use default
+      const placeName = userLocation 
+        ? `Memory at ${finalLat.toFixed(4)}, ${finalLng.toFixed(4)}`
+        : 'Berkeley Campus';
 
-      // Create a simple memory record directly in Supabase
+      // Create memory record
       const { data, error } = await supabase
         .from('memories')
         .insert({
-          text: text.trim(),
+          text: '[Voice recording]',
           lat: finalLat,
           lng: finalLng,
-          place_name: placeName.trim(),
-          privacy: privacy,
-          summary: summary.trim() || text.trim().substring(0, 100) + '...',
-          radius_m: radius[0],
+          place_name: placeName,
+          privacy: 'public',
+          summary: 'Voice recording',
+          radius_m: 30,
           author_id: userId || null,
-          extracted_people: extractedNames,
+          extracted_people: [],
+          audio_url: audioUrl,
         })
         .select()
         .single();
@@ -182,19 +121,8 @@ export function AddMemorySheet({ isOpen, onClose, userLocation, userId }: AddMem
       console.log('Memory created successfully:', data);
       toast.success('Memory created successfully!');
       
-      // Reset form
-      setText('');
-      setPlaceName('');
-      setSummary('');
-      setRadius([30]);
-      setPrivacy('public');
-      setUseCustomLocation(false);
-      setCustomLat('');
-      setCustomLng('');
-      setShowMapPicker(false);
-      setPickedLocation(null);
-      
-      // Close the sheet
+      // Reset and close
+      setAudioBlob('');
       onClose();
       
       // Refresh the page to show the new memory
@@ -203,251 +131,31 @@ export function AddMemorySheet({ isOpen, onClose, userLocation, userId }: AddMem
     } catch (error) {
       console.error('Failed to create memory:', error);
       toast.error('Failed to create memory. Please try again.');
+      setAudioBlob('');
     } finally {
       setIsProcessing(false);
     }
   };
 
-  const handleRecordingToggle = () => {
-    setIsRecording(!isRecording);
-    // TODO: Implement voice recording with Web Speech API
-    if (!isRecording) {
-      toast.info('Voice recording not yet implemented');
-    }
-  };
-
-  const handlePasteFromClipboard = async () => {
-    try {
-      const clipboardText = await navigator.clipboard.readText();
-      setText(clipboardText);
-      toast.success('Text pasted from clipboard');
-    } catch (error) {
-      toast.error('Failed to read from clipboard');
-    }
-  };
-
   return (
     <Sheet open={isOpen} onOpenChange={onClose}>
-      <SheetContent side="bottom" className="h-[90vh] max-h-[90vh] flex flex-col">
-        <SheetHeader className="flex-shrink-0 pb-4">
-          <SheetTitle>Add Memory</SheetTitle>
-        </SheetHeader>
-
-        <div className="flex-1 overflow-y-auto px-1 -mx-1">
-          <form onSubmit={handleSubmit} className="space-y-6 mt-6 pb-8">
-          {/* Location Info */}
-          {userLocation ? (
-            <div className="p-3 bg-green-50 rounded-lg">
-              <p className="text-sm text-green-800">
-                📍 Location: {userLocation.lat.toFixed(6)}, {userLocation.lng.toFixed(6)}
-              </p>
-              <p className="text-xs text-green-600">
-                Accuracy: ±{Math.round(userLocation.accuracy || 0)}m
-              </p>
+      <SheetContent side="bottom" className="h-auto max-h-[50vh] flex flex-col p-6">
+        <div className="flex flex-col items-center justify-center space-y-4">
+          {isProcessing ? (
+            <div className="flex flex-col items-center space-y-4">
+              <Loader2 className="h-8 w-8 animate-spin text-white" />
+              <p className="text-sm text-white font-terminal">Saving your memory...</p>
             </div>
           ) : (
-            <div className="p-3 bg-yellow-50 rounded-lg">
-              <p className="text-sm text-yellow-800">
-                📍 Using default Berkeley campus location
-              </p>
-              <p className="text-xs text-yellow-600">
-                You can manually set coordinates below
-              </p>
-            </div>
+            <VoiceRecorder
+              onRecordingComplete={setAudioBlob}
+              existingRecording={audioBlob}
+              onRecordingStateChange={(recording) => {
+                setIsRecording(recording);
+                onRecordingStateChange?.(recording);
+              }}
+            />
           )}
-
-          {/* Location Override */}
-          <div className="space-y-3">
-            <div className="flex items-center space-x-2">
-              <input
-                type="checkbox"
-                id="use-custom-location"
-                checked={useCustomLocation}
-                onChange={(e) => setUseCustomLocation(e.target.checked)}
-                disabled={isProcessing}
-                className="rounded"
-              />
-              <Label htmlFor="use-custom-location" className="text-sm font-medium">
-                Use custom location instead of current location
-              </Label>
-            </div>
-            
-            {useCustomLocation && (
-              <div className="space-y-3">
-                <Button
-                  type="button"
-                  variant="outline"
-                  onClick={() => setShowMapPicker(!showMapPicker)}
-                  disabled={isProcessing}
-                  className="w-full"
-                >
-                  <MapPin className="h-4 w-4 mr-2" />
-                  {showMapPicker ? 'Hide Map Picker' : 'Pick Location on Map'}
-                </Button>
-                
-                {pickedLocation && (
-                  <div className="p-3 bg-green-50 rounded-lg">
-                    <p className="text-sm text-green-800">
-                      📍 Picked Location: {pickedLocation.lat.toFixed(6)}, {pickedLocation.lng.toFixed(6)}
-                    </p>
-                  </div>
-                )}
-                
-                {showMapPicker && (
-                  <div className="h-64 border rounded-lg overflow-hidden">
-                    <div ref={mapContainer} className="w-full h-full" />
-                  </div>
-                )}
-                
-                <p className="text-xs text-blue-600">
-                  💡 Click on the map to pick your desired location
-                </p>
-              </div>
-            )}
-          </div>
-
-          {/* Place Name Input */}
-          <div className="space-y-2">
-            <Label htmlFor="place-name">Place Name *</Label>
-            <Input
-              id="place-name"
-              placeholder="e.g., Campanile, Memorial Glade, Doe Library"
-              value={placeName}
-              onChange={(e) => setPlaceName(e.target.value)}
-              disabled={isProcessing}
-              required
-            />
-          </div>
-
-          {/* Text Input */}
-          <div className="space-y-2">
-            <Label htmlFor="memory-text">Memory Text *</Label>
-            <Textarea
-              id="memory-text"
-              placeholder="Describe your memory... (e.g., 'Had coffee with friends at the campus cafe')"
-              value={text}
-              onChange={(e) => setText(e.target.value)}
-              className="min-h-[100px]"
-              disabled={isProcessing}
-              required
-            />
-            {text.trim() && (
-              <div className="p-2 bg-blue-50 rounded text-xs">
-                <p className="text-blue-800 font-medium mb-1">Detected names:</p>
-                {extractNames(text.trim()).length > 0 ? (
-                  <div className="flex flex-wrap gap-1">
-                    {extractNames(text.trim()).map((name, index) => (
-                      <span key={index} className="bg-blue-200 text-blue-800 px-2 py-1 rounded">
-                        {name}
-                      </span>
-                    ))}
-                  </div>
-                ) : (
-                  <p className="text-blue-600">No names detected</p>
-                )}
-              </div>
-            )}
-          </div>
-
-          {/* Summary Input */}
-          <div className="space-y-2">
-            <Label htmlFor="summary">Summary (optional)</Label>
-            <Input
-              id="summary"
-              placeholder="Short summary of your memory"
-              value={summary}
-              onChange={(e) => setSummary(e.target.value)}
-              disabled={isProcessing}
-            />
-            <p className="text-xs text-gray-500">
-              If left empty, will use first 100 characters of your memory text
-            </p>
-          </div>
-
-          {/* Input Methods */}
-          <div className="flex space-x-2">
-            <Button
-              type="button"
-              variant="outline"
-              onClick={handleRecordingToggle}
-              disabled={isProcessing}
-              className={isRecording ? 'bg-red-100 text-red-700' : ''}
-            >
-              {isRecording ? <MicOff className="h-4 w-4" /> : <Mic className="h-4 w-4" />}
-              {isRecording ? 'Stop' : 'Record'}
-            </Button>
-
-            <Button
-              type="button"
-              variant="outline"
-              onClick={handlePasteFromClipboard}
-              disabled={isProcessing}
-            >
-              📋 Paste
-            </Button>
-          </div>
-
-          {/* Privacy Setting */}
-          <div className="space-y-2">
-            <Label htmlFor="privacy">Privacy</Label>
-            <Select value={privacy} onValueChange={(value: 'private' | 'friends' | 'public') => setPrivacy(value)}>
-              <SelectTrigger>
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="public">🌍 Public - Anyone can see</SelectItem>
-                <SelectItem value="friends">👥 Friends - Only friends can see</SelectItem>
-                <SelectItem value="private">🔒 Private - Only you can see</SelectItem>
-              </SelectContent>
-            </Select>
-          </div>
-
-          {/* Radius Setting */}
-          <div className="space-y-2">
-            <Label htmlFor="radius">Trigger Radius: {radius[0]}m</Label>
-            <Slider
-              value={radius}
-              onValueChange={setRadius}
-              max={100}
-              min={10}
-              step={5}
-              className="w-full"
-            />
-            <p className="text-xs text-gray-500">
-              This radius will be shown around your memory marker on the map
-            </p>
-          </div>
-
-          {/* Submit Button */}
-          <Button
-            type="submit"
-            className="w-full"
-            disabled={isProcessing || !text.trim() || !placeName.trim()}
-          >
-            {isProcessing ? (
-              <>
-                <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                Creating Memory...
-              </>
-            ) : (
-              <>
-                <Send className="h-4 w-4 mr-2" />
-                Create Memory
-              </>
-            )}
-          </Button>
-          </form>
-
-          {/* Help Text */}
-          <div className="mt-6 p-3 bg-blue-50 rounded-lg">
-            <h4 className="text-sm font-medium text-blue-900 mb-2">💡 Tips for better memories:</h4>
-            <ul className="text-xs text-blue-700 space-y-1">
-              <li>• Include specific places (e.g., "Campanile", "Memorial Glade")</li>
-              <li>• Mention dates or times (e.g., "Oct 2, 2025", "last spring")</li>
-              <li>• Include people's names</li>
-              <li>• Keep it personal and meaningful</li>
-            </ul>
-          </div>
         </div>
       </SheetContent>
     </Sheet>

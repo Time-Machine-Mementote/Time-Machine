@@ -105,9 +105,9 @@ export const BERKELEY_CAMPUS_ZOOM = 16;
 
 // Default geofence configuration
 export const DEFAULT_GEOFENCE_CONFIG: GeofenceConfig = {
-  sampleInterval: 2000, // 2 seconds
+  sampleInterval: 1000, // 1 second (faster detection)
   maxDistance: 100, // 100 meters
-  cooldownMs: 90000, // 90 seconds
+  cooldownMs: 15000, // 15 seconds (reduced from 90s for faster replay)
   defaultRadius: 30, // 30 meters
 };
 

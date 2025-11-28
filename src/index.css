@@ -1,8 +1,97 @@
 @import url('https://fonts.googleapis.com/css2?family=Crimson+Text:ital,wght@0,400;0,600;1,400&family=Inter:wght@300;400;500;600&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Orbitron:wght@400;500;600;700;800;900&display=swap');
 
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
+
+/* Ensure full height on mobile and desktop */
+html, body, #root {
+  height: 100%;
+  width: 100%;
+  margin: 0;
+  padding: 0;
+  overflow: hidden;
+}
+
+/* Mobile safe area support */
+@supports (padding: max(0px)) {
+  body {
+    padding-left: env(safe-area-inset-left);
+    padding-right: env(safe-area-inset-right);
+  }
+}
+
+/* Robotic font utility */
+.font-robotic {
+  font-family: 'Orbitron', 'Courier New', monospace;
+  font-weight: 600;
+  letter-spacing: 0.05em;
+}
+
+/* Terminal font utility */
+.font-terminal {
+  font-family: 'Courier New', 'Consolas', 'Monaco', monospace;
+  font-weight: 400;
+  letter-spacing: 0.02em;
+}
+
+/* Terminal text style - white on black */
+.terminal-text {
+  font-family: 'Courier New', 'Consolas', 'Monaco', monospace;
+  color: #ffffff;
+  background-color: #000000;
+  padding: 2px 4px;
+  border: 1px solid #ffffff;
+  font-weight: 400;
+  letter-spacing: 0.02em;
+}
+
+/* Terminal container */
+.terminal-container {
+  background-color: #000000;
+  color: #ffffff;
+  font-family: 'Courier New', 'Consolas', 'Monaco', monospace;
+  border: 2px solid #ffffff;
+  padding: 1.5rem;
+}
+
+/* Blinking cursor animation */
+@keyframes blink-cursor {
+  0%, 50% {
+    opacity: 1;
+  }
+  51%, 100% {
+    opacity: 0;
+  }
+}
+
+.terminal-cursor {
+  display: inline-block;
+  width: 8px;
+  height: 1em;
+  background-color: #ffffff;
+  margin-left: 2px;
+  animation: blink-cursor 1s infinite;
+}
+
+/* Black/White alternating animation for on/off states */
+@keyframes bw-alternate {
+  0%, 100% {
+    background-color: #000000; /* black */
+    color: #ffffff; /* white text */
+    border-color: #ffffff; /* white border */
+  }
+  50% {
+    background-color: #ffffff; /* white */
+    color: #000000; /* black text */
+    border-color: #000000; /* black border */
+  }
+}
+
+.animate-bw-alternate {
+  animation: bw-alternate 1s ease-in-out infinite;
+}
 
 /* Time Machine Design System - Dreamy, nostalgic aesthetic with HSL colors */
 
