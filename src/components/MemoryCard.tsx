@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Heart, Clock, Play, Eye, MoreVertical, Mic, Image, FileText, Sparkles } from 'lucide-react';
+import { Heart, Clock, Play, Eye, MoreVertical, Mic, Image, FileText, Sparkles, VolumeX } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Card, CardContent, CardHeader } from '@/components/ui/card';
@@ -19,8 +19,9 @@ interface MemoryCardProps {
 
 const MemoryCard = ({ entry, onToggleFavorite }: MemoryCardProps) => {
   const [isExpanded, setIsExpanded] = useState(false);
-  const [isPlaying, setIsPlaying] = useState(false);
   const [isGeneratingMemory, setIsGeneratingMemory] = useState(false);
+  const [isPlayingAudio, setIsPlayingAudio] = useState(false);
+  const [audioElement, setAudioElement] = useState<HTMLAudioElement | null>(null);
   const memoryService = new MemoryService();
 
   const formatDate = (timestamp: string) => {
@@ -65,9 +66,52 @@ const MemoryCard = ({ entry, onToggleFavorite }: MemoryCardProps) => {
     setIsExpanded(!isExpanded);
   };
 
-  const handlePlayAudio = () => {
-    // TODO: Add audio playback functionality
-    console.log('Play audio for entry:', entry.id);
+  const handlePlayAudio = async () => {
+    if (!entry.generated_memory?.audio_url) {
+      toast.error('No audio available for this memory');
+      return;
+    }
+
+    // Stop any currently playing audio
+    if (audioElement) {
+      audioElement.pause();
+      audioElement.currentTime = 0;
+      setIsPlayingAudio(false);
+    }
+
+    // Create and play new audio element
+    const audio = new Audio(entry.generated_memory.audio_url);
+    audio.addEventListener('play', () => setIsPlayingAudio(true));
+    audio.addEventListener('pause', () => setIsPlayingAudio(false));
+    audio.addEventListener('ended', () => {
+      setIsPlayingAudio(false);
+      setAudioElement(null);
+    });
+    audio.addEventListener('error', (e) => {
+      console.error('Audio playback error:', e);
+      toast.error('Failed to play audio');
+      setIsPlayingAudio(false);
+      setAudioElement(null);
+    });
+
+    setAudioElement(audio);
+    try {
+      await audio.play();
+    } catch (error) {
+      console.error('Error playing audio:', error);
+      toast.error('Failed to play audio. Please try again.');
+      setIsPlayingAudio(false);
+      setAudioElement(null);
+    }
+  };
+
+  const handleStopAudio = () => {
+    if (audioElement) {
+      audioElement.pause();
+      audioElement.currentTime = 0;
+      setIsPlayingAudio(false);
+      setAudioElement(null);
+    }
   };
 
   const truncateText = (text: string, maxLength: number = 120) => {
@@ -179,13 +223,19 @@ const MemoryCard = ({ entry, onToggleFavorite }: MemoryCardProps) => {
                 variant="outline"
                 size="sm"
                 className="text-xs bg-primary/10 text-primary border-primary/20"
-                onClick={() => {
-                  // Play the integrated memory experience
-                  console.log('Playing integrated memory:', entry.generated_memory);
-                }}
+                onClick={isPlayingAudio ? handleStopAudio : handlePlayAudio}
               >
-                <Play className="w-3 h-3 mr-1" />
-                Experience Memory
+                {isPlayingAudio ? (
+                  <>
+                    <VolumeX className="w-3 h-3 mr-1" />
+                    Stop
+                  </>
+                ) : (
+                  <>
+                    <Play className="w-3 h-3 mr-1" />
+                    Play Memory
+                  </>
+                )}
               </Button>
             ) : (
               <Button
@@ -235,15 +285,31 @@ const MemoryCard = ({ entry, onToggleFavorite }: MemoryCardProps) => {
               {entry.generated_memory.audio_url && (
                 <div className="mb-4">
                   <h5 className="text-sm font-medium text-foreground mb-2">Audio Narration</h5>
-                  <audio 
-                    controls 
-                    className="w-full h-10"
-                    preload="metadata"
-                  >
-                    <source src={entry.generated_memory.audio_url} type="audio/mpeg" />
-                    <source src={entry.generated_memory.audio_url} type="audio/mp3" />
-                    Your browser does not support the audio element.
-                  </audio>
+                  <div className="flex items-center gap-3">
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={isPlayingAudio ? handleStopAudio : handlePlayAudio}
+                      className="shrink-0"
+                    >
+                      {isPlayingAudio ? (
+                        <>
+                          <VolumeX className="w-4 h-4 mr-2" />
+                          Stop
+                        </>
+                      ) : (
+                        <>
+                          <Play className="w-4 h-4 mr-2" />
+                          Play
+                        </>
+                      )}
+                    </Button>
+                    {isPlayingAudio && (
+                      <span className="text-xs text-muted-foreground animate-pulse">
+                        Playing audio narration...
+                      </span>
+                    )}
+                  </div>
                 </div>
               )}
 

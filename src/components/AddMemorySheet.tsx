@@ -7,12 +7,62 @@ import { Textarea } from '@/components/ui/textarea';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Label } from '@/components/ui/label';
 import { Slider } from '@/components/ui/slider';
-import { Mic, MicOff, Send, Loader2, MapPin } from 'lucide-react';
+import { Mic, MicOff, Send, Loader2, MapPin, FileAudio } from 'lucide-react';
 import { supabase } from '@/integrations/supabase/client';
 import { toast } from 'sonner';
 import type { UserLocation } from '@/types/memory';
 import mapboxgl from 'mapbox-gl';
 import 'mapbox-gl/dist/mapbox-gl.css';
+import VoiceRecorder from '@/components/VoiceRecorder';
+import { uploadAudioToStorage } from '@/utils/audioStorage';
+import { enrichMemoryWithEntities } from '@/services/memoryApi';
+
+// TypeScript declarations for Web Speech API
+declare global {
+  interface Window {
+    SpeechRecognition: new () => SpeechRecognition;
+    webkitSpeechRecognition: new () => SpeechRecognition;
+  }
+}
+
+interface SpeechRecognition extends EventTarget {
+  continuous: boolean;
+  interimResults: boolean;
+  lang: string;
+  start(): void;
+  stop(): void;
+  onresult: ((this: SpeechRecognition, ev: SpeechRecognitionEvent) => any) | null;
+  onerror: ((this: SpeechRecognition, ev: SpeechRecognitionErrorEvent) => any) | null;
+  onend: ((this: SpeechRecognition, ev: Event) => any) | null;
+}
+
+interface SpeechRecognitionEvent extends Event {
+  resultIndex: number;
+  results: SpeechRecognitionResultList;
+}
+
+interface SpeechRecognitionResultList {
+  length: number;
+  item(index: number): SpeechRecognitionResult;
+  [index: number]: SpeechRecognitionResult;
+}
+
+interface SpeechRecognitionResult {
+  length: number;
+  item(index: number): SpeechRecognitionAlternative;
+  [index: number]: SpeechRecognitionAlternative;
+  isFinal: boolean;
+}
+
+interface SpeechRecognitionAlternative {
+  transcript: string;
+  confidence: number;
+}
+
+interface SpeechRecognitionErrorEvent extends Event {
+  error: string;
+  message: string;
+}
 
 interface AddMemorySheetProps {
   isOpen: boolean;
@@ -34,8 +84,13 @@ export function AddMemorySheet({ isOpen, onClose, userLocation, userId }: AddMem
   const [customLng, setCustomLng] = useState('');
   const [showMapPicker, setShowMapPicker] = useState(false);
   const [pickedLocation, setPickedLocation] = useState<{lat: number, lng: number} | null>(null);
-  const mapContainer = useRef<HTMLDivElement>(null);
+  const [isTranscribing, setIsTranscribing] = useState(false);
+  const [voiceMode, setVoiceMode] = useState<'transcribe' | 'memo'>('transcribe'); // 'transcribe' for speech-to-text, 'memo' for audio recording
+  const [audioBlob, setAudioBlob] = useState<string>(''); // Base64 audio for preview
+  const [audioBlobForUpload, setAudioBlobForUpload] = useState<Blob | null>(null); // Raw blob for upload
+  const mapPickerContainer = useRef<HTMLDivElement>(null);
   const map = useRef<mapboxgl.Map | null>(null);
+  const recognitionRef = useRef<SpeechRecognition | null>(null);
 
   // Simple name extraction function
   const extractNames = (text: string): string[] => {
@@ -65,7 +120,7 @@ export function AddMemorySheet({ isOpen, onClose, userLocation, userId }: AddMem
 
   // Initialize map when map picker is shown
   useEffect(() => {
-    if (!showMapPicker || !mapContainer.current) return;
+    if (!showMapPicker || !mapPickerContainer.current) return;
 
     const MAPBOX_TOKEN = import.meta.env.VITE_MAPBOX_TOKEN;
     if (!MAPBOX_TOKEN) {
@@ -76,7 +131,7 @@ export function AddMemorySheet({ isOpen, onClose, userLocation, userId }: AddMem
     mapboxgl.accessToken = MAPBOX_TOKEN;
 
     map.current = new mapboxgl.Map({
-      container: mapContainer.current,
+      container: mapPickerContainer.current,
       style: 'mapbox://styles/mapbox/streets-v12',
       center: userLocation ? [userLocation.lng, userLocation.lat] : [-122.2585, 37.8721],
       zoom: 15,
@@ -123,11 +178,75 @@ export function AddMemorySheet({ isOpen, onClose, userLocation, userId }: AddMem
     }
   }, [showMapPicker]);
 
+  // Initialize speech recognition
+  useEffect(() => {
+    console.log('Initializing speech recognition...');
+    console.log('webkitSpeechRecognition available:', 'webkitSpeechRecognition' in window);
+    console.log('SpeechRecognition available:', 'SpeechRecognition' in window);
+    
+    if ('webkitSpeechRecognition' in window || 'SpeechRecognition' in window) {
+      const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+      console.log('Creating SpeechRecognition instance');
+      recognitionRef.current = new SpeechRecognition();
+      
+      recognitionRef.current.continuous = true;
+      recognitionRef.current.interimResults = true;
+      recognitionRef.current.lang = 'en-US';
+
+      recognitionRef.current.onresult = (event) => {
+        let finalTranscript = '';
+        let interimTranscript = '';
+
+        for (let i = event.resultIndex; i < event.results.length; i++) {
+          const transcript = event.results[i][0].transcript;
+          if (event.results[i].isFinal) {
+            finalTranscript += transcript;
+          } else {
+            interimTranscript += transcript;
+          }
+        }
+
+        // Update text with both final and interim results
+        if (finalTranscript) {
+          setText(prevText => prevText + finalTranscript);
+          setIsTranscribing(false);
+        } else if (interimTranscript) {
+          setIsTranscribing(true);
+        }
+      };
+
+      recognitionRef.current.onerror = (event) => {
+        console.error('Speech recognition error:', event.error);
+        setIsRecording(false);
+        setIsTranscribing(false);
+        
+        if (event.error === 'not-allowed') {
+          toast.error('Microphone access denied. Please allow microphone access and try again.');
+        } else if (event.error === 'no-speech') {
+          toast.error('No speech detected. Please try again.');
+        } else {
+          toast.error(`Speech recognition error: ${event.error}`);
+        }
+      };
+
+      recognitionRef.current.onend = () => {
+        setIsRecording(false);
+        setIsTranscribing(false);
+      };
+    }
+
+    return () => {
+      if (recognitionRef.current) {
+        recognitionRef.current.stop();
+      }
+    };
+  }, []);
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     
-    if (!text.trim()) {
-      toast.error('Please enter some text for your memory');
+    if (!text.trim() && !audioBlobForUpload) {
+      toast.error('Please enter some text or record a voice memo for your memory');
       return;
     }
 
@@ -155,32 +274,70 @@ export function AddMemorySheet({ isOpen, onClose, userLocation, userId }: AddMem
       }
 
       // Extract names from the memory text
-      const extractedNames = extractNames(text.trim());
+      const extractedNames = text.trim() ? extractNames(text.trim()) : [];
+
+      // Upload audio if a voice memo was recorded
+      let audioUrl: string | null = null;
+      if (audioBlobForUpload && userId) {
+        // Generate a temporary ID for the audio upload
+        const tempMemoryId = crypto.randomUUID();
+        audioUrl = await uploadAudioToStorage(audioBlobForUpload, tempMemoryId, userId);
+        if (!audioUrl) {
+          toast.warning('Memory created but audio upload failed. You can try uploading again later.');
+        }
+      }
 
       // Create a simple memory record directly in Supabase
       const { data, error } = await supabase
         .from('memories')
         .insert({
-          text: text.trim(),
+          text: text.trim() || (audioBlobForUpload ? '[Voice memo - see audio]' : ''),
           lat: finalLat,
           lng: finalLng,
           place_name: placeName.trim(),
           privacy: privacy,
-          summary: summary.trim() || text.trim().substring(0, 100) + '...',
+          summary: summary.trim() || (text.trim() ? text.trim().substring(0, 100) + '...' : 'Voice memo recording'),
           radius_m: radius[0],
           author_id: userId || null,
           extracted_people: extractedNames,
+          audio_url: audioUrl,
         })
         .select()
         .single();
 
       if (error) {
         console.error('Supabase error:', error);
+        
+        // Show more specific error messages
+        let errorMessage = 'Failed to create memory. ';
+        if (error.code === '42501') {
+          errorMessage += 'Permission denied. You may need to sign in.';
+        } else if (error.code === '23503') {
+          errorMessage += 'Invalid reference. Please check your account.';
+        } else if (error.code === '23505') {
+          errorMessage += 'This memory already exists.';
+        } else if (error.message) {
+          errorMessage += error.message;
+        } else {
+          errorMessage += 'Please try again.';
+        }
+        
+        toast.error(errorMessage, { duration: 5000 });
         throw error;
       }
 
       console.log('Memory created successfully:', data);
       toast.success('Memory created successfully!');
+      
+      // Enrich memory with extracted entities and update places table (non-blocking)
+      const memoryText = text.trim() || (audioBlobForUpload ? '[Voice memo - see audio]' : '');
+      if (memoryText && data?.id) {
+        // Call enrichment in the background - don't wait for it
+        enrichMemoryWithEntities(data.id, memoryText).catch(err => {
+          console.error('Background memory enrichment failed:', err);
+          // Don't show error to user - enrichment is non-critical
+        });
+      }
       
       // Reset form
       setText('');
@@ -193,6 +350,9 @@ export function AddMemorySheet({ isOpen, onClose, userLocation, userId }: AddMem
       setCustomLng('');
       setShowMapPicker(false);
       setPickedLocation(null);
+      setAudioBlob('');
+      setAudioBlobForUpload(null);
+      setVoiceMode('transcribe');
       
       // Close the sheet
       onClose();
@@ -200,19 +360,46 @@ export function AddMemorySheet({ isOpen, onClose, userLocation, userId }: AddMem
       // Refresh the page to show the new memory
       window.location.reload();
       
-    } catch (error) {
+    } catch (error: any) {
       console.error('Failed to create memory:', error);
-      toast.error('Failed to create memory. Please try again.');
+      
+      // If error wasn't already handled above, show generic message
+      if (!error?.code) {
+        const errorMessage = error?.message || 'Unknown error occurred';
+        toast.error(`Failed to create memory: ${errorMessage}`, { duration: 5000 });
+      }
     } finally {
-      setIsProcessing(false);
+     setIsProcessing(false);
     }
   };
 
   const handleRecordingToggle = () => {
-    setIsRecording(!isRecording);
-    // TODO: Implement voice recording with Web Speech API
-    if (!isRecording) {
-      toast.info('Voice recording not yet implemented');
+    console.log('handleRecordingToggle called', { isRecording, recognitionRef: recognitionRef.current });
+    
+    if (!recognitionRef.current) {
+      console.log('Speech recognition not available');
+      toast.error('Speech recognition is not supported in this browser. Please use Chrome or Safari.');
+      return;
+    }
+
+    if (isRecording) {
+      // Stop recording
+      console.log('Stopping recording');
+      recognitionRef.current.stop();
+      setIsRecording(false);
+      setIsTranscribing(false);
+      toast.success('Recording stopped');
+    } else {
+      // Start recording
+      console.log('Starting recording');
+      try {
+        recognitionRef.current.start();
+        setIsRecording(true);
+        toast.success('Recording started - speak now!');
+      } catch (error) {
+        console.error('Failed to start recording:', error);
+        toast.error('Failed to start recording. Please try again.');
+      }
     }
   };
 
@@ -295,7 +482,7 @@ export function AddMemorySheet({ isOpen, onClose, userLocation, userId }: AddMem
                 
                 {showMapPicker && (
                   <div className="h-64 border rounded-lg overflow-hidden">
-                    <div ref={mapContainer} className="w-full h-full" />
+                    <div ref={mapPickerContainer} className="w-full h-full" />
                   </div>
                 )}
                 
@@ -321,15 +508,17 @@ export function AddMemorySheet({ isOpen, onClose, userLocation, userId }: AddMem
 
           {/* Text Input */}
           <div className="space-y-2">
-            <Label htmlFor="memory-text">Memory Text *</Label>
+            <Label htmlFor="memory-text">
+              Memory Text {voiceMode === 'memo' ? '(optional - voice memo will be saved)' : '*'}
+            </Label>
             <Textarea
               id="memory-text"
-              placeholder="Describe your memory... (e.g., 'Had coffee with friends at the campus cafe')"
+              placeholder={voiceMode === 'memo' ? "Optional: Add text description for your voice memo..." : "Describe your memory... (e.g., 'Had coffee with friends at the campus cafe')"}
               value={text}
               onChange={(e) => setText(e.target.value)}
               className="min-h-[100px]"
               disabled={isProcessing}
-              required
+              required={voiceMode === 'transcribe'}
             />
             {text.trim() && (
               <div className="p-2 bg-blue-50 rounded text-xs">
@@ -364,28 +553,106 @@ export function AddMemorySheet({ isOpen, onClose, userLocation, userId }: AddMem
             </p>
           </div>
 
-          {/* Input Methods */}
-          <div className="flex space-x-2">
-            <Button
-              type="button"
-              variant="outline"
-              onClick={handleRecordingToggle}
-              disabled={isProcessing}
-              className={isRecording ? 'bg-red-100 text-red-700' : ''}
-            >
-              {isRecording ? <MicOff className="h-4 w-4" /> : <Mic className="h-4 w-4" />}
-              {isRecording ? 'Stop' : 'Record'}
-            </Button>
-
-            <Button
-              type="button"
-              variant="outline"
-              onClick={handlePasteFromClipboard}
-              disabled={isProcessing}
-            >
-              📋 Paste
-            </Button>
+          {/* Voice Input Mode Selection */}
+          <div className="space-y-3">
+            <Label>Voice Input Mode</Label>
+            <div className="flex gap-2">
+              <Button
+                type="button"
+                variant={voiceMode === 'transcribe' ? 'default' : 'outline'}
+                onClick={() => {
+                  setVoiceMode('transcribe');
+                  setAudioBlob('');
+                  setAudioBlobForUpload(null);
+                  if (isRecording && recognitionRef.current) {
+                    recognitionRef.current.stop();
+                    setIsRecording(false);
+                  }
+                }}
+                disabled={isProcessing}
+                className="flex-1"
+              >
+                <Mic className="h-4 w-4 mr-2" />
+                Transcribe to Text
+              </Button>
+              <Button
+                type="button"
+                variant={voiceMode === 'memo' ? 'default' : 'outline'}
+                onClick={() => {
+                  setVoiceMode('memo');
+                  if (isRecording && recognitionRef.current) {
+                    recognitionRef.current.stop();
+                    setIsRecording(false);
+                  }
+                }}
+                disabled={isProcessing}
+                className="flex-1"
+              >
+                <FileAudio className="h-4 w-4 mr-2" />
+                Voice Memo
+              </Button>
+            </div>
+            <p className="text-xs text-muted-foreground">
+              {voiceMode === 'transcribe' 
+                ? 'Speech-to-text: Converts your speech into written text'
+                : 'Voice Memo: Records audio with ambient sounds (perfect for walking!)'}
+            </p>
           </div>
+
+          {/* Transcription Mode */}
+          {voiceMode === 'transcribe' && (
+            <div className="space-y-2">
+              <div className="flex space-x-2">
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={handleRecordingToggle}
+                  disabled={isProcessing}
+                  className={`${isRecording ? 'bg-red-100 text-red-700 border-red-300' : ''} ${isTranscribing ? 'animate-pulse' : ''}`}
+                >
+                  {isRecording ? <MicOff className="h-4 w-4" /> : <Mic className="h-4 w-4" />}
+                  {isRecording ? (isTranscribing ? 'Listening...' : 'Stop') : 'Start Recording'}
+                </Button>
+
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={handlePasteFromClipboard}
+                  disabled={isProcessing}
+                >
+                  📋 Paste
+                </Button>
+              </div>
+
+              {/* Voice Recording Status */}
+              {isRecording && (
+                <div className="p-3 bg-red-50 rounded-lg">
+                  <p className="text-sm text-red-800 flex items-center">
+                    <Mic className="h-4 w-4 mr-2" />
+                    {isTranscribing ? 'Listening and transcribing...' : 'Recording started - speak clearly!'}
+                  </p>
+                  <p className="text-xs text-red-600 mt-1">
+                    Click "Stop" when you're done speaking
+                  </p>
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* Voice Memo Mode */}
+          {voiceMode === 'memo' && (
+            <div className="space-y-2">
+              <VoiceRecorder
+                onRecordingComplete={(base64Audio) => setAudioBlob(base64Audio)}
+                onBlobReady={(blob) => setAudioBlobForUpload(blob)}
+                ambientMode={true}
+                existingRecording={audioBlob}
+              />
+              <p className="text-xs text-muted-foreground">
+                💡 Voice memos capture both your voice and ambient sounds - perfect for recording memories while walking!
+              </p>
+            </div>
+          )}
 
           {/* Privacy Setting */}
           <div className="space-y-2">
@@ -422,7 +689,7 @@ export function AddMemorySheet({ isOpen, onClose, userLocation, userId }: AddMem
           <Button
             type="submit"
             className="w-full"
-            disabled={isProcessing || !text.trim() || !placeName.trim()}
+            disabled={isProcessing || (!text.trim() && !audioBlobForUpload) || !placeName.trim()}
           >
             {isProcessing ? (
               <>
