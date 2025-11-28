@@ -15,6 +15,7 @@ export class AudioQueue {
   private segmentDuration = 5; // 5 seconds per segment
   private segmentTimeout: NodeJS.Timeout | null = null;
   private segmentTimeout2: NodeJS.Timeout | null = null; // Second timeout
+  private playbackMonitorInterval: NodeJS.Timeout | null = null; // Monitor to keep playback going
 
   constructor() {
     // Initialize first audio element
@@ -100,8 +101,33 @@ export class AudioQueue {
         clearTimeout(this.segmentTimeout2);
         this.segmentTimeout2 = null;
       }
+      // Don't stop - keep trying to play next
       this.playNext();
     });
+
+    // Add pause event listeners to detect unexpected pauses
+    this.audioElement.addEventListener('pause', () => {
+      // If not muted and we have something playing, resume
+      if (!this.isMuted && this.currentlyPlaying) {
+        console.log('Audio 1 paused unexpectedly, resuming...');
+        this.audioElement?.play().catch(err => {
+          console.warn('Failed to resume audio 1 after pause:', err);
+        });
+      }
+    });
+
+    this.audioElement2.addEventListener('pause', () => {
+      // If not muted and we have something playing, resume
+      if (!this.isMuted && this.currentlyPlaying2) {
+        console.log('Audio 2 paused unexpectedly, resuming...');
+        this.audioElement2?.play().catch(err => {
+          console.warn('Failed to resume audio 2 after pause:', err);
+        });
+      }
+    });
+
+    // Start playback monitor to ensure continuous playback
+    this.startPlaybackMonitor();
 
     // Set up Media Session API for lock screen controls
     this.setupMediaSession();
@@ -396,12 +422,13 @@ export class AudioQueue {
       }
     }
 
-    // If queue is empty and nothing is playing, don't clear media session
-    // Keep it ready for when new memories are added
+    // If queue is empty and nothing is playing, keep waiting
+    // The playback monitor will check periodically and resume when new memories are added
     if (this.queue.length === 0 && !this.currentlyPlaying && !this.currentlyPlaying2) {
       console.log('Audio queue is empty, waiting for more memories...');
       // Don't update media session - keep it ready
       // The geofencing system will add more memories as user moves
+      // The playback monitor will automatically start playing when queue has items
     }
   }
 
@@ -426,9 +453,19 @@ export class AudioQueue {
     if (this.audioElement2) {
       this.audioElement2.pause();
     }
+    if (this.segmentTimeout) {
+      clearTimeout(this.segmentTimeout);
+      this.segmentTimeout = null;
+    }
+    if (this.segmentTimeout2) {
+      clearTimeout(this.segmentTimeout2);
+      this.segmentTimeout2 = null;
+    }
     if ('mediaSession' in navigator) {
       navigator.mediaSession.playbackState = 'paused';
     }
+    // Stop playback monitor when muted
+    this.stopPlaybackMonitor();
   }
 
   unmute() {
@@ -452,6 +489,58 @@ export class AudioQueue {
     // If nothing is playing, start playing
     if (!this.currentlyPlaying && !this.currentlyPlaying2) {
       this.playNext();
+    }
+    // Restart playback monitor
+    this.startPlaybackMonitor();
+  }
+
+  // Monitor to ensure playback continues
+  private startPlaybackMonitor() {
+    // Clear existing monitor
+    if (this.playbackMonitorInterval) {
+      clearInterval(this.playbackMonitorInterval);
+    }
+
+    // Check every 2 seconds to ensure playback continues
+    this.playbackMonitorInterval = setInterval(() => {
+      if (this.isMuted) {
+        return; // Don't monitor if muted
+      }
+
+      // Check if audio 1 should be playing but isn't
+      if (this.currentlyPlaying && this.audioElement && this.audioElement.paused) {
+        console.log('Audio 1 is paused but should be playing, resuming...');
+        this.audioElement.play().catch(err => {
+          console.warn('Failed to resume audio 1 in monitor:', err);
+          // If resume fails, try playing next
+          this.currentlyPlaying = null;
+          this.playNext();
+        });
+      }
+
+      // Check if audio 2 should be playing but isn't
+      if (this.currentlyPlaying2 && this.audioElement2 && this.audioElement2.paused) {
+        console.log('Audio 2 is paused but should be playing, resuming...');
+        this.audioElement2.play().catch(err => {
+          console.warn('Failed to resume audio 2 in monitor:', err);
+          // If resume fails, try playing next
+          this.currentlyPlaying2 = null;
+          this.playNext();
+        });
+      }
+
+      // If nothing is playing and queue is empty, try to play next (in case new memories were added)
+      if (!this.currentlyPlaying && !this.currentlyPlaying2 && this.queue.length > 0) {
+        console.log('Nothing playing but queue has items, starting playback...');
+        this.playNext();
+      }
+    }, 2000); // Check every 2 seconds
+  }
+
+  private stopPlaybackMonitor() {
+    if (this.playbackMonitorInterval) {
+      clearInterval(this.playbackMonitorInterval);
+      this.playbackMonitorInterval = null;
     }
   }
 
@@ -494,6 +583,8 @@ export class AudioQueue {
     }
     this.currentlyPlaying = null;
     this.currentlyPlaying2 = null;
+    this.updateMediaSession(null);
+    this.stopPlaybackMonitor();
   }
 
   getCurrentlyPlaying(): AudioQueueItem | null {
