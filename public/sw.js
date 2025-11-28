@@ -1,7 +1,7 @@
 // Service Worker for Berkeley Memory Map
 // Enables background audio playback support
 
-const CACHE_NAME = 'berkeley-memory-map-v1';
+const CACHE_NAME = 'berkeley-memory-map-v2'; // Updated version to force refresh
 
 // Install event - cache essential resources
 self.addEventListener('install', (event) => {
@@ -23,41 +23,55 @@ self.addEventListener('activate', (event) => {
       return Promise.all(
         cacheNames.map((cacheName) => {
           if (cacheName !== CACHE_NAME) {
+            console.log('Deleting old cache:', cacheName);
             return caches.delete(cacheName);
           }
         })
       );
+    }).then(() => {
+      // Force all clients to use the new service worker
+      return self.clients.claim();
     })
   );
-  return self.clients.claim();
 });
 
 // Fetch event - serve from cache, fallback to network
 self.addEventListener('fetch', (event) => {
   const url = new URL(event.request.url);
+  const requestUrl = event.request.url.toLowerCase();
   
   // Skip service worker for:
-  // 1. Supabase API requests (auth, database, storage, etc.)
+  // 1. Supabase API requests (auth, database, storage, etc.) - CRITICAL
   if (url.hostname.includes('supabase.co') || 
-      url.hostname.includes('supabase.io')) {
-    return; // Let browser handle Supabase requests normally
+      url.hostname.includes('supabase.io') ||
+      requestUrl.includes('supabase') ||
+      requestUrl.includes('/auth/v1/') ||
+      requestUrl.includes('/rest/v1/') ||
+      requestUrl.includes('/storage/v1/') ||
+      requestUrl.includes('/functions/v1/')) {
+    // DO NOT intercept - let browser handle directly
+    return;
   }
   
   // 2. Audio files
-  if (event.request.url.includes('.webm') || 
-      event.request.url.includes('.mp3') || 
-      event.request.url.includes('.ogg') ||
-      event.request.url.includes('audio-memories')) {
+  if (requestUrl.includes('.webm') || 
+      requestUrl.includes('.mp3') || 
+      requestUrl.includes('.ogg') ||
+      requestUrl.includes('audio-memories')) {
     return; // Let browser handle audio requests normally
   }
   
-  // 3. API requests (non-Supabase)
-  if (event.request.url.includes('/api/') ||
-      event.request.method !== 'GET') {
+  // 3. All non-GET requests (POST, PUT, DELETE, etc.)
+  if (event.request.method !== 'GET') {
+    return; // Let browser handle all non-GET requests normally
+  }
+  
+  // 4. API requests
+  if (requestUrl.includes('/api/')) {
     return; // Let browser handle API requests normally
   }
   
-  // Only cache GET requests for static assets
+  // Only cache GET requests for static assets (HTML, CSS, JS, images)
   event.respondWith(
     caches.match(event.request).then((response) => {
       return response || fetch(event.request);

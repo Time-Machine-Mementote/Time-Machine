@@ -12,9 +12,28 @@ import type { User } from "@supabase/supabase-js";
 // Register service worker for background audio support
 if ('serviceWorker' in navigator && import.meta.env.PROD) {
   window.addEventListener('load', () => {
-    navigator.serviceWorker.register('/sw.js').catch(() => {
-      // Service worker registration is optional - fail silently
-    });
+    navigator.serviceWorker.register('/sw.js', { updateViaCache: 'none' })
+      .then((registration) => {
+        console.log('Service Worker registered:', registration.scope);
+        // Check for updates
+        registration.update();
+        // Listen for updates
+        registration.addEventListener('updatefound', () => {
+          console.log('Service Worker update found');
+          const newWorker = registration.installing;
+          if (newWorker) {
+            newWorker.addEventListener('statechange', () => {
+              if (newWorker.state === 'installed' && navigator.serviceWorker.controller) {
+                console.log('New Service Worker installed, reloading...');
+                window.location.reload();
+              }
+            });
+          }
+        });
+      })
+      .catch((error) => {
+        console.error('Service Worker registration failed:', error);
+      });
   });
 }
 

@@ -70,15 +70,41 @@ export function AuthGuard({ children }: AuthGuardProps) {
         }
         toast.success('Check your email for the confirmation link!')
       } else {
+        // Test connection first
+        console.log('Testing Supabase connection...')
+        try {
+          const testResponse = await fetch(`${import.meta.env.VITE_SUPABASE_URL || 'https://iwwvjecrvgrdyptxhnwj.supabase.co'}/rest/v1/`, {
+            method: 'HEAD',
+            headers: {
+              'apikey': import.meta.env.VITE_SUPABASE_ANON_KEY || '',
+            }
+          })
+          console.log('Connection test response:', testResponse.status, testResponse.statusText)
+        } catch (testError) {
+          console.error('Connection test failed:', testError)
+        }
+        
         const { data, error } = await supabase.auth.signInWithPassword({
           email,
           password,
         })
         
-        console.log('Sign in response:', { data: data ? 'Success' : 'No data', error })
+        console.log('Sign in response:', { 
+          data: data ? 'Success' : 'No data', 
+          error: error ? {
+            message: error.message,
+            status: error.status,
+            name: error.name
+          } : null
+        })
         
         if (error) {
-          console.error('Sign in error:', error)
+          console.error('Sign in error details:', {
+            message: error.message,
+            status: error.status,
+            name: error.name,
+            stack: error.stack
+          })
           throw error
         }
         // Removed welcome back toast
@@ -87,26 +113,53 @@ export function AuthGuard({ children }: AuthGuardProps) {
       console.error('Auth error details:', error)
       
       let errorMessage = 'An error occurred'
+      let errorDetails: any = {}
       
       if (error instanceof Error) {
+        errorDetails = {
+          name: error.name,
+          message: error.message,
+          stack: error.stack
+        }
+        
         // Check for network errors
         if (error.message.includes('Failed to fetch') || 
             error.message.includes('NetworkError') ||
-            error.message.includes('Network request failed')) {
+            error.message.includes('Network request failed') ||
+            error.message.includes('Load failed')) {
           errorMessage = 'Network error: Unable to connect to server. Please check your internet connection and try again.'
-          console.error('Network error detected - this may be caused by:', {
-            serviceWorker: 'Check if service worker is interfering',
-            cors: 'Check CORS settings in Supabase',
-            url: import.meta.env.VITE_SUPABASE_URL || 'Not set'
+          console.error('Network error detected - troubleshooting info:', {
+            serviceWorker: 'Check DevTools > Application > Service Workers',
+            cors: 'Check Supabase Dashboard > Settings > API > CORS',
+            url: import.meta.env.VITE_SUPABASE_URL || 'Not set',
+            keyPresent: !!import.meta.env.VITE_SUPABASE_ANON_KEY,
+            hostname: window.location.hostname,
+            protocol: window.location.protocol
           })
+          
+          // Try to unregister service worker if it exists
+          if ('serviceWorker' in navigator) {
+            navigator.serviceWorker.getRegistrations().then(registrations => {
+              if (registrations.length > 0) {
+                console.warn('Service workers found:', registrations.length)
+                console.warn('To fix: Go to DevTools > Application > Service Workers > Unregister')
+              }
+            })
+          }
         } else {
-          errorMessage = error.message
+          errorMessage = error.message || 'Authentication failed'
         }
-      } else if (typeof error === 'object' && error !== null && 'message' in error) {
-        errorMessage = String(error.message)
+      } else if (typeof error === 'object' && error !== null) {
+        // Supabase error object
+        if ('message' in error) {
+          errorMessage = String(error.message)
+        }
+        if ('status' in error) {
+          errorDetails.status = error.status
+        }
       }
       
-      console.error('Error message:', errorMessage)
+      console.error('Final error message:', errorMessage, errorDetails)
       toast.error(errorMessage)
     } finally {
       setAuthLoading(false)
