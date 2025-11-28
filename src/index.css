@@ -126,6 +126,7 @@
     @apply bg-background text-foreground font-['Inter'] antialiased;
     background: var(--gradient-background);
     min-height: 100vh;
+    /* Safe area support - individual components handle their own safe area insets */
   }
 
   h1, h2, h3, h4, h5, h6 {
@@ -155,6 +156,22 @@
   @keyframes shimmer {
     0% { background-position: -200% 0; }
     100% { background-position: 200% 0; }
+  }
+
+  /* Terminal-specific styles */
+  @keyframes terminal-blink {
+    0%, 49% { opacity: 1; }
+    50%, 100% { opacity: 0; }
+  }
+
+  .terminal-cursor::after {
+    content: '_';
+    animation: terminal-blink 1s infinite;
+  }
+
+  /* Terminal font fallback */
+  .font-terminal {
+    font-family: 'Courier New', 'Monaco', 'Menlo', 'Consolas', monospace;
   }
 
   @keyframes pulse-glow {

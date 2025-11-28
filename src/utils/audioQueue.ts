@@ -1,6 +1,10 @@
 // Audio Queue System for Berkeley Memory Map
+// Uses memory scoring and Turf.js for distance calculation
 import type { Memory, AudioQueueItem, UserLocation } from '@/types/memory';
 import { PRIORITY_WEIGHTS } from '@/types/memory';
+import { computeMemoryScore } from './memoryScoring';
+import distance from '@turf/distance';
+import { point } from '@turf/helpers';
 
 export class AudioQueue {
   private queue: AudioQueueItem[] = [];
@@ -36,25 +40,30 @@ export class AudioQueue {
       return;
     }
 
-    // Calculate distance (simplified - in real app use proper distance calculation)
-    const distance = this.calculateDistance(
-      userLocation.lat, userLocation.lng,
-      memory.lat, memory.lng
-    );
+    // Calculate distance using Turf.js
+    const userPoint = point([userLocation.lng, userLocation.lat]);
+    const memoryPoint = point([memory.lng, memory.lat]);
+    const dist = distance(userPoint, memoryPoint, { units: 'meters' });
 
     // Skip if too far
-    if (distance > memory.radius_m) {
+    if (dist > memory.radius_m) {
       return;
     }
 
-    // Calculate priority
+    // Use memory scoring system (combines distance + emotion)
+    const memoryScore = computeMemoryScore(memory, {
+      lat: userLocation.lat,
+      lng: userLocation.lng,
+    });
+
+    // Calculate base priority from relationship
     let priority = 0;
     if (isOwner) priority += PRIORITY_WEIGHTS.OWNER;
     else if (isFriend) priority += PRIORITY_WEIGHTS.FRIEND;
     else priority += PRIORITY_WEIGHTS.PUBLIC;
 
-    // Distance bonus (closer = higher priority)
-    priority += (memory.radius_m - distance) * PRIORITY_WEIGHTS.DISTANCE;
+    // Multiply by memory score (0-1) for weighted scoring
+    priority *= memoryScore;
 
     // Freshness bonus
     const ageHours = (now - new Date(memory.created_at).getTime()) / (1000 * 60 * 60);
@@ -63,7 +72,7 @@ export class AudioQueue {
     const queueItem: AudioQueueItem = {
       memory,
       priority,
-      distance,
+      distance: dist,
       queuedAt: now,
     };
 
@@ -82,8 +91,8 @@ export class AudioQueue {
     }
   }
 
-  // Play the next item in queue
-  private playNext() {
+  // Play the next item in queue with fade transitions
+  private async playNext() {
     if (this.isMuted || this.queue.length === 0) {
       return;
     }
@@ -91,34 +100,127 @@ export class AudioQueue {
     const nextItem = this.queue.shift();
     if (!nextItem) return;
 
+    // Fade out current audio if playing
+    if (this.audioElement && !this.audioElement.paused) {
+      await this.fadeOut(this.audioElement, 500); // 500ms fade out
+      this.audioElement.pause();
+      this.audioElement.currentTime = 0;
+    }
+
     this.currentlyPlaying = nextItem;
     this.lastPlayedTimes.set(nextItem.memory.id, Date.now());
 
     if (nextItem.memory.audio_url) {
-      this.audioElement!.src = nextItem.memory.audio_url;
-      this.audioElement!.play().catch(error => {
+      try {
+        // Validate URL format
+        if (!nextItem.memory.audio_url || !nextItem.memory.audio_url.startsWith('http')) {
+          throw new Error('Invalid audio URL format');
+        }
+
+        this.audioElement!.src = nextItem.memory.audio_url;
+        this.audioElement!.volume = 0; // Start at 0 for fade in
+        
+        // Set up error handler before loading
+        this.audioElement!.onerror = (e) => {
+          console.error('Audio element error:', e);
+          console.error('Audio URL:', nextItem.memory.audio_url);
+          console.error('Memory ID:', nextItem.memory.id);
+          this.currentlyPlaying = null;
+          this.playNext();
+        };
+        
+        // Set up end handler
+        this.audioElement!.onended = () => {
+          this.currentlyPlaying = null;
+          this.playNext();
+        };
+        
+        // Load and play
+        await this.audioElement!.load();
+        await this.audioElement!.play();
+        await this.fadeIn(this.audioElement!, 500); // 500ms fade in
+        
+      } catch (error: any) {
         console.error('Failed to play audio:', error);
+        console.error('Audio URL:', nextItem.memory.audio_url);
+        console.error('Memory ID:', nextItem.memory.id);
+        console.error('Error details:', {
+          name: error.name,
+          message: error.message,
+          code: error.code,
+        });
+        
+        // More detailed error logging
+        if (error.message?.includes('load') || error.message?.includes('Invalid')) {
+          console.error('❌ Audio file failed to load. Possible causes:');
+          console.error('  1. URL is invalid or file does not exist in Supabase Storage');
+          console.error('  2. File may not be publicly accessible');
+          console.error('  3. CORS issue with storage bucket');
+          console.error('  → Click on memory marker to regenerate audio');
+        } else if (error.message?.includes('play') || error.name === 'NotAllowedError') {
+          console.error('⚠️ Audio playback was blocked. Browser requires user interaction first.');
+          console.error('  → Try clicking on a memory marker to play audio');
+        } else {
+          console.error('❌ Unknown audio playback error');
+        }
+        
         this.currentlyPlaying = null;
         this.playNext();
-      });
+      }
     } else {
-      console.warn('No audio URL for memory:', nextItem.memory.id);
+      console.warn('No audio URL for memory:', nextItem.memory.id, '- Memory needs audio generation');
+      console.warn('Memory text:', nextItem.memory.text?.substring(0, 50) + '...');
+      // Skip this memory - it needs audio generation first
+      // In a real scenario, you might want to trigger audio generation here
       this.currentlyPlaying = null;
       this.playNext();
     }
   }
 
-  // Calculate distance between two points (Haversine formula)
-  private calculateDistance(lat1: number, lng1: number, lat2: number, lng2: number): number {
-    const R = 6371000; // Earth's radius in meters
-    const dLat = (lat2 - lat1) * Math.PI / 180;
-    const dLng = (lng2 - lng1) * Math.PI / 180;
-    const a = Math.sin(dLat / 2) * Math.sin(dLat / 2) +
-              Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) *
-              Math.sin(dLng / 2) * Math.sin(dLng / 2);
-    const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
-    return R * c;
+  // Fade out audio
+  private fadeOut(audio: HTMLAudioElement, duration: number): Promise<void> {
+    return new Promise((resolve) => {
+      const startVolume = audio.volume;
+      const startTime = Date.now();
+      
+      const fade = () => {
+        const elapsed = Date.now() - startTime;
+        const progress = Math.min(elapsed / duration, 1);
+        audio.volume = startVolume * (1 - progress);
+        
+        if (progress < 1) {
+          requestAnimationFrame(fade);
+        } else {
+          resolve();
+        }
+      };
+      
+      fade();
+    });
   }
+
+  // Fade in audio
+  private fadeIn(audio: HTMLAudioElement, duration: number): Promise<void> {
+    return new Promise((resolve) => {
+      const targetVolume = 1.0;
+      const startTime = Date.now();
+      
+      const fade = () => {
+        const elapsed = Date.now() - startTime;
+        const progress = Math.min(elapsed / duration, 1);
+        audio.volume = targetVolume * progress;
+        
+        if (progress < 1) {
+          requestAnimationFrame(fade);
+        } else {
+          resolve();
+        }
+      };
+      
+      fade();
+    });
+  }
+
 
   // Public methods
   mute() {
