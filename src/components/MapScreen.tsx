@@ -341,8 +341,27 @@ export function MapScreen({ userId, showOverlay = true }: MapScreenProps) {
 
   // Handle Output button - toggle audio playback
   // State only changes on user click - never automatically
-  const handleOutputClick = useCallback(() => {
+  const handleOutputClick = useCallback(async () => {
     if (isMuted) {
+      // On mobile, explicitly request location permission on user gesture
+      if (navigator.geolocation) {
+        try {
+          // This triggers the permission prompt on mobile (requires user gesture)
+          navigator.geolocation.getCurrentPosition(
+            (position) => {
+              console.log('Location permission granted:', position.coords.latitude, position.coords.longitude);
+            },
+            (error) => {
+              console.error('Location permission denied or error:', error.message);
+              alert('Location access is required to play nearby memories. Please enable location in your browser settings.');
+            },
+            { enableHighAccuracy: true, timeout: 10000 }
+          );
+        } catch (err) {
+          console.error('Error requesting location:', err);
+        }
+      }
+      
       // Unmute and start playing memories in radius
       unmute();
       setIsMuted(false);
