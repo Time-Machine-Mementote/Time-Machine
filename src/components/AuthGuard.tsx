@@ -20,7 +20,7 @@ export function AuthGuard({ children }: AuthGuardProps) {
   useEffect(() => {
     // Test Supabase connection on mount (especially for Vercel)
     const testConnection = async () => {
-      const supabaseUrl = import.meta.env.VITE_SUPABASE_URL || 'https://iwwvjecrvgrdyptxhnwj.supabase.co';
+      const supabaseUrl = import.meta.env.VITE_SUPABASE_URL || 'https://qhbrnotooiutpwwtadlx.supabase.co';
       const isVercel = window.location.hostname.includes('vercel.app');
       
       if (isVercel) {
@@ -101,7 +101,7 @@ export function AuthGuard({ children }: AuthGuardProps) {
         // Test connection first
         console.log('Testing Supabase connection...')
         try {
-          const testResponse = await fetch(`${import.meta.env.VITE_SUPABASE_URL || 'https://iwwvjecrvgrdyptxhnwj.supabase.co'}/rest/v1/`, {
+          const testResponse = await fetch(`${import.meta.env.VITE_SUPABASE_URL || 'https://qhbrnotooiutpwwtadlx.supabase.co'}/rest/v1/`, {
             method: 'HEAD',
             headers: {
               'apikey': import.meta.env.VITE_SUPABASE_ANON_KEY || '',
