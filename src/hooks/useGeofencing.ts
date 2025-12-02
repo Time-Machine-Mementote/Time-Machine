@@ -56,6 +56,7 @@ export function useGeofencing(options: UseGeofencingOptions = {}) {
   const intervalRef = useRef<NodeJS.Timeout | null>(null);
   const lastCheckRef = useRef<number>(0);
   const wakeLockRef = useRef<WakeLockSentinel | null>(null);
+  const locationRef = useRef<UserLocation | null>(null); // Track current location to avoid stale closures
 
   // Update currently playing memory when audio queue changes
   useEffect(() => {
@@ -104,6 +105,9 @@ export function useGeofencing(options: UseGeofencingOptions = {}) {
             timestamp: Date.now(),
           };
 
+          // Update ref for use in interval callback (avoids stale closure)
+          locationRef.current = newLocation;
+
           setState(prev => ({
             ...prev,
             location: newLocation,
@@ -127,10 +131,12 @@ export function useGeofencing(options: UseGeofencingOptions = {}) {
         }
       );
 
-      // Start periodic memory checking
+      // Start periodic memory checking - use a ref to get latest location to avoid stale closure
       intervalRef.current = setInterval(async () => {
-        if (state.location) {
-          await checkNearbyMemories(state.location);
+        // Get latest location from state by reading it at check time
+        const currentLocation = locationRef.current;
+        if (currentLocation) {
+          await checkNearbyMemories(currentLocation);
         }
       }, finalConfig.sampleInterval);
 
@@ -152,7 +158,7 @@ export function useGeofencing(options: UseGeofencingOptions = {}) {
         error: 'Failed to start location tracking',
       }));
     }
-  }, [enabled, finalConfig.sampleInterval, state.location]);
+  }, [enabled, finalConfig.sampleInterval, checkNearbyMemories]);
 
   // Stop location tracking
   const stopTracking = useCallback(() => {

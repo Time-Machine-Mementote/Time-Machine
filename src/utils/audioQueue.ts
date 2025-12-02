@@ -494,6 +494,68 @@ export class AudioQueue {
     this.startPlaybackMonitor();
   }
 
+  // Unlock audio for mobile browsers - MUST be called directly from user gesture (click/tap)
+  // This plays a silent sound to "warm up" the audio elements so they can play later
+  async unlockAudio(): Promise<boolean> {
+    console.log('🔓 Attempting to unlock audio for mobile...');
+    
+    try {
+      // Create AudioContext and resume it (required for some browsers)
+      const AudioContext = window.AudioContext || (window as any).webkitAudioContext;
+      if (AudioContext) {
+        const audioContext = new AudioContext();
+        if (audioContext.state === 'suspended') {
+          await audioContext.resume();
+          console.log('✅ AudioContext resumed');
+        }
+        
+        // Play a silent sound to fully unlock
+        const oscillator = audioContext.createOscillator();
+        const gainNode = audioContext.createGain();
+        gainNode.gain.value = 0; // Silent
+        oscillator.connect(gainNode);
+        gainNode.connect(audioContext.destination);
+        oscillator.start();
+        oscillator.stop(audioContext.currentTime + 0.001);
+      }
+
+      // Also try to play/pause on both audio elements to unlock them
+      if (this.audioElement) {
+        // Set a data URL for a tiny silent audio
+        const silentAudio = 'data:audio/wav;base64,UklGRiQAAABXQVZFZm10IBAAAAABAAEARKwAAIhYAQACABAAZGF0YQAAAAA=';
+        this.audioElement.src = silentAudio;
+        this.audioElement.volume = 0;
+        await this.audioElement.play();
+        this.audioElement.pause();
+        this.audioElement.src = '';
+        this.audioElement.volume = 0.7;
+        console.log('✅ Audio element 1 unlocked');
+      }
+
+      if (this.audioElement2) {
+        const silentAudio = 'data:audio/wav;base64,UklGRiQAAABXQVZFZm10IBAAAAABAAEARKwAAIhYAQACABAAZGF0YQAAAAA=';
+        this.audioElement2.src = silentAudio;
+        this.audioElement2.volume = 0;
+        await this.audioElement2.play();
+        this.audioElement2.pause();
+        this.audioElement2.src = '';
+        this.audioElement2.volume = 0.7;
+        console.log('✅ Audio element 2 unlocked');
+      }
+
+      console.log('🔓 Audio unlock complete!');
+      return true;
+    } catch (error) {
+      console.warn('⚠️ Audio unlock failed:', error);
+      return false;
+    }
+  }
+
+  // Check if audio is likely locked (for mobile detection)
+  isLikelyMobile(): boolean {
+    return /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
+  }
+
   // Monitor to ensure playback continues
   private startPlaybackMonitor() {
     // Clear existing monitor

@@ -11,6 +11,7 @@ import { X } from 'lucide-react';
 import { BERKELEY_CAMPUS_CENTER, BERKELEY_CAMPUS_ZOOM } from '@/types/memory';
 import type { Memory } from '@/types/memory';
 import { supabase } from '@/integrations/supabase/client';
+import { audioQueue } from '@/utils/audioQueue';
 
 // Set Mapbox access token
 const MAPBOX_TOKEN = import.meta.env.VITE_MAPBOX_TOKEN;
@@ -341,19 +342,41 @@ export function MapScreen({ userId, showOverlay = true }: MapScreenProps) {
 
   // Handle Output button - toggle audio playback
   // State only changes on user click - never automatically
-  const handleOutputClick = useCallback(() => {
+  const handleOutputClick = useCallback(async () => {
     if (isMuted) {
-      // Unmute and start playing memories in radius
+      // CRITICAL: Unlock audio FIRST - must happen synchronously in click handler for mobile
+      // This plays a silent sound to "warm up" audio elements on iOS/Android
+      console.log('📱 Output clicked - unlocking audio for mobile...');
+      await audioQueue.unlockAudio();
+      
+      // Request location permission if not already granted
+      // This ensures we have location data to find nearby memories
+      if (!location && navigator.geolocation) {
+        console.log('📍 Requesting location permission...');
+        navigator.geolocation.getCurrentPosition(
+          (position) => {
+            console.log('✅ Location permission granted:', position.coords.latitude, position.coords.longitude);
+          },
+          (error) => {
+            console.warn('⚠️ Location permission denied or error:', error.message);
+          },
+          { enableHighAccuracy: true, timeout: 10000 }
+        );
+      }
+      
+      // Now unmute and start playing memories in radius
       unmute();
       setIsMuted(false);
       setIsOutputPlaying(true); // Turn white and stay white - only changes on next click
+      console.log('🔊 Audio output enabled');
     } else {
       // Mute and stop playing
       mute();
       setIsMuted(true);
       setIsOutputPlaying(false); // Turn black - only changes on next click
+      console.log('🔇 Audio output disabled');
     }
-  }, [isMuted, unmute, mute]);
+  }, [isMuted, unmute, mute, location]);
 
   return (
     <div className="relative w-full h-full overflow-hidden" style={{ height: '100%', width: '100%', minHeight: 0 }}>
