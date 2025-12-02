@@ -216,7 +216,7 @@ export class MemoryService {
   }
 
   private async getSupabaseUrl(): Promise<string> {
-    return "https://iwwvjecrvgrdyptxhnwj.supabase.co";
+    return "https://qhbrnotooiutpwwtadlx.supabase.co";
   }
 
   private async getAuthToken(): Promise<string> {

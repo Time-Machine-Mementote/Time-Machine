@@ -50,7 +50,7 @@ export class EdgeFunctionService {
   private supabaseUrl: string
 
   constructor() {
-    this.supabaseUrl = "https://iwwvjecrvgrdyptxhnwj.supabase.co"
+    this.supabaseUrl = "https://qhbrnotooiutpwwtadlx.supabase.co"
   }
 
   /**

@@ -14,7 +14,7 @@ export class RunwareService {
   private supabaseUrl: string;
 
   constructor() {
-    this.supabaseUrl = "https://iwwvjecrvgrdyptxhnwj.supabase.co";
+    this.supabaseUrl = "https://qhbrnotooiutpwwtadlx.supabase.co";
   }
 
   async generateImage(params: GenerateImageParams): Promise<GeneratedImage> {

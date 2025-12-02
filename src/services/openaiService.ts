@@ -16,7 +16,7 @@ export class OpenAIService {
   private supabaseUrl: string;
 
   constructor() {
-    this.supabaseUrl = "https://iwwvjecrvgrdyptxhnwj.supabase.co";
+    this.supabaseUrl = "https://qhbrnotooiutpwwtadlx.supabase.co";
   }
 
   async generateStory(params: GenerateStoryParams): Promise<GeneratedStory> {
