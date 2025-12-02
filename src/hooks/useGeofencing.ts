@@ -158,7 +158,8 @@ export function useGeofencing(options: UseGeofencingOptions = {}) {
         error: 'Failed to start location tracking',
       }));
     }
-  }, [enabled, finalConfig.sampleInterval, checkNearbyMemories]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [enabled, finalConfig.sampleInterval]);
 
   // Stop location tracking
   const stopTracking = useCallback(() => {
