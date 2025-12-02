@@ -259,7 +259,6 @@ const MemoryCard = ({ entry, onToggleFavorite }: MemoryCardProps) => {
                     loop
                     muted
                     className="w-full h-48 object-cover rounded-lg border shadow-sm"
-                    poster="/placeholder.svg"
                   >
                     Your browser does not support the video tag.
                   </video>

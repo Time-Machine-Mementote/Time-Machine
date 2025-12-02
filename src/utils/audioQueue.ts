@@ -253,7 +253,7 @@ export class AudioQueue {
         album: 'Time Machine Memories',
         artwork: [
           {
-            src: '/placeholder.svg',
+            src: '/favicon.svg',
             sizes: '512x512',
             type: 'image/svg+xml',
           },
