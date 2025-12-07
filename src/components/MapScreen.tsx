@@ -467,29 +467,56 @@ export function MapScreen({ userId, showOverlay = true }: MapScreenProps) {
       {!showOverlay && selectedMemory && (
         <div 
           className="absolute bottom-0 left-0 right-0 bg-black border-t-2 border-white z-30 p-4"
-          style={{ maxHeight: '30vh', overflowY: 'auto' }}
+          style={{ maxHeight: '40vh', overflowY: 'auto' }}
         >
-          <div className="flex items-center justify-between mb-2">
-            <h3 className="font-terminal text-white text-lg">
-              &gt; {getAbbreviatedFileName(selectedMemory.audio_url)}
-            </h3>
+          <div className="flex items-center justify-between mb-3">
+            <div className="flex-1 min-w-0 mr-3">
+              <h3 className="font-terminal text-white text-lg truncate">
+                &gt; {selectedMemory.summary || selectedMemory.text || 'Untitled Memory'}
+              </h3>
+              <p className="font-terminal text-gray-400 text-sm">
+                {new Date(selectedMemory.created_at).toLocaleDateString('en-US', {
+                  year: 'numeric',
+                  month: 'long',
+                  day: 'numeric'
+                })}
+              </p>
+            </div>
             <Button
               onClick={() => setSelectedMemory(null)}
               variant="ghost"
               size="icon"
-              className="text-white hover:bg-white hover:text-black"
+              className="text-white hover:bg-white hover:text-black flex-shrink-0"
             >
               <X className="h-4 w-4" />
             </Button>
           </div>
+          
           {selectedMemory.place_name && (
-            <p className="font-terminal text-white text-sm mb-1">
-              Location: {selectedMemory.place_name}
+            <p className="font-terminal text-white text-sm mb-2">
+              📍 {selectedMemory.place_name}
             </p>
           )}
-          {selectedMemory.summary && (
-            <p className="font-terminal text-white text-sm">
-              Summary: {selectedMemory.summary}
+          
+          {/* Audio Player */}
+          {selectedMemory.audio_url ? (
+            <div className="mt-3 p-3 bg-gray-900 rounded border border-gray-700">
+              <p className="font-terminal text-gray-400 text-xs mb-2">🎧 Audio Memory</p>
+              <audio
+                controls
+                src={selectedMemory.audio_url}
+                className="w-full h-10"
+                style={{ 
+                  filter: 'invert(1)', 
+                  backgroundColor: 'transparent'
+                }}
+              >
+                Your browser does not support the audio element.
+              </audio>
+            </div>
+          ) : (
+            <p className="font-terminal text-gray-500 text-sm mt-3 italic">
+              No audio available for this memory
             </p>
           )}
         </div>
