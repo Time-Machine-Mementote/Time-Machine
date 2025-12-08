@@ -8,6 +8,8 @@ interface AuthGuardProps {
   children: React.ReactNode
 }
 
+const SECRET_CODE = '8463'
+
 export function AuthGuard({ children }: AuthGuardProps) {
   const [user, setUser] = useState<User | null>(null)
   const [loading, setLoading] = useState(true)
@@ -15,6 +17,7 @@ export function AuthGuard({ children }: AuthGuardProps) {
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [fullName, setFullName] = useState('')
+  const [secretCode, setSecretCode] = useState('')
   const [authLoading, setAuthLoading] = useState(false)
 
   useEffect(() => {
@@ -80,6 +83,13 @@ export function AuthGuard({ children }: AuthGuardProps) {
       console.log('Attempting authentication...', { isSignUp, email: email.substring(0, 5) + '...' })
       
       if (isSignUp) {
+        // Validate secret code for sign-up
+        if (secretCode !== SECRET_CODE) {
+          toast.error('Invalid access code. Please enter the correct code.')
+          setAuthLoading(false)
+          return
+        }
+        
         const { data, error } = await supabase.auth.signUp({
           email,
           password,
@@ -289,6 +299,26 @@ export function AuthGuard({ children }: AuthGuardProps) {
                 required
               />
             </div>
+
+            {isSignUp && (
+              <div className="space-y-2">
+                <label htmlFor="secretCode" className="font-terminal text-white text-sm block">
+                  <span className="text-white">&gt;</span> ACCESS_CODE:
+                </label>
+                <input
+                  id="secretCode"
+                  type="text"
+                  placeholder="Enter access code"
+                  value={secretCode}
+                  onChange={(e) => setSecretCode(e.target.value)}
+                  className="w-full bg-black border border-white text-white font-terminal px-3 py-2 focus:outline-none focus:border-white"
+                  required={isSignUp}
+                />
+                <div className="font-terminal text-gray-500 text-xs">
+                  Ask a current user for the access code
+                </div>
+              </div>
+            )}
 
             <button 
               type="submit" 
