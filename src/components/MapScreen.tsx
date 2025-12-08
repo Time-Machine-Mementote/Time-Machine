@@ -69,7 +69,11 @@ export function MapScreen({ userId, showOverlay = true, filterUserId, showAllMem
   const [previewLocation, setPreviewLocation] = useState<{ lat: number; lng: number } | null>(null);
   const [isPreviewLoading, setIsPreviewLoading] = useState(false);
   const [previewMemories, setPreviewMemories] = useState<Memory[]>([]);
+  const [isGhostPlaying, setIsGhostPlaying] = useState(false);
   const previewMarkerRef = useRef<mapboxgl.Marker | null>(null);
+  const previewIntervalRef = useRef<NodeJS.Timeout | null>(null); // For continuous playback
+  const PREVIEW_RADIUS = 200; // 200 meters
+  const PREVIEW_REFETCH_INTERVAL = 10000; // Re-add memories every 10 seconds for continuous playback
 
   // Geofencing hook (disabled for now)
   const {
@@ -551,12 +555,55 @@ export function MapScreen({ userId, showOverlay = true, filterUserId, showAllMem
     }
   }, [isMuted, unmute, mute, location]);
 
-  // Preview at Point - trigger audio playback for any clicked location (dev portal feature)
+  // Stop continuous preview playback
+  const stopPreviewPlayback = useCallback(() => {
+    console.log('🔮 Stopping preview playback');
+    
+    // Clear the continuous fetch interval
+    if (previewIntervalRef.current) {
+      clearInterval(previewIntervalRef.current);
+      previewIntervalRef.current = null;
+    }
+    
+    // Mute and clear the audio queue
+    audioQueue.mute();
+    audioQueue.clear();
+    
+    setIsGhostPlaying(false);
+  }, []);
+
+  // Add memories to queue for continuous preview playback (called periodically)
+  const addPreviewMemoriesToQueue = useCallback(async (lat: number, lng: number, memoriesWithAudio: Memory[]) => {
+    // Create a simulated user location for the preview
+    const previewUserLocation: UserLocation = {
+      lat,
+      lng,
+      accuracy: 10,
+      timestamp: Date.now(),
+    };
+
+    // Add each memory with audio to the queue
+    // The audio queue has its own cooldown system to prevent duplicates
+    for (const memory of memoriesWithAudio) {
+      const isOwner = userId ? memory.author_id === userId : false;
+      const isFriend = false; // Preview doesn't need friend logic
+      
+      // audioQueue.addMemory handles cooldown internally
+      audioQueue.addMemory(memory, previewUserLocation, isOwner, isFriend);
+    }
+  }, [userId]);
+
+  // Preview at Point - trigger CONTINUOUS audio playback for any clicked location (dev portal feature)
   // This does NOT store any data in the database - it's purely for previewing what would play
+  // Playback continues indefinitely until stopped, matching the main app's behavior
   const handlePreviewAtPoint = useCallback(async (lat: number, lng: number) => {
     if (!isPreviewMode) return;
     
-    console.log('🔮 Preview at Point triggered:', { lat, lng });
+    console.log('🔮 Preview at Point triggered (continuous mode):', { lat, lng });
+    
+    // Stop any existing preview playback first
+    stopPreviewPlayback();
+    
     setPreviewLocation({ lat, lng });
     setIsPreviewLoading(true);
     setPreviewMemories([]);
@@ -606,8 +653,7 @@ export function MapScreen({ userId, showOverlay = true, filterUserId, showAllMem
     }
 
     try {
-      // Fetch memories in radius for this location (default radius ~100m, but we'll use a larger radius to find more)
-      const PREVIEW_RADIUS = 200; // 200 meters
+      // Fetch memories in radius for this location
       const memories = await getMemoriesInRadius(lat, lng, PREVIEW_RADIUS);
       
       console.log(`🔮 Found ${memories.length} memories near preview point`);
@@ -637,33 +683,36 @@ export function MapScreen({ userId, showOverlay = true, filterUserId, showAllMem
       // Unlock audio first (required for mobile)
       await audioQueue.unlockAudio();
 
-      // Clear the existing queue and add preview memories
+      // Clear the existing queue before starting fresh
       audioQueue.clear();
       
-      // Create a simulated user location for the preview
-      const previewUserLocation: UserLocation = {
-        lat,
-        lng,
-        accuracy: 10,
-        timestamp: Date.now(),
-      };
-
-      // Add each memory with audio to the queue
-      for (const memory of memoriesWithAudio) {
-        // Calculate a simulated distance (we're pretending to be at this location)
-        const isOwner = userId ? memory.author_id === userId : false;
-        const isFriend = false; // Preview doesn't need friend logic
-        
-        console.log('🔮 Adding preview memory to queue:', memory.id, memory.summary || memory.text?.substring(0, 50));
-        audioQueue.addMemory(memory, previewUserLocation, isOwner, isFriend);
-      }
+      // Add initial memories to the queue
+      await addPreviewMemoriesToQueue(lat, lng, memoriesWithAudio);
 
       // Unmute to start playing
       audioQueue.unmute();
+      setIsGhostPlaying(true);
       
-      toast.success(`Playing ${memoriesWithAudio.length} memory audio${memoriesWithAudio.length > 1 ? 's' : ''}`, {
-        description: `Preview at ${lat.toFixed(4)}, ${lng.toFixed(4)}`,
-        duration: 3000,
+      // Start continuous playback - periodically re-add memories to keep the queue filled
+      // This mirrors how the main app's geofencing continuously adds nearby memories
+      previewIntervalRef.current = setInterval(async () => {
+        console.log('🔮 Continuous preview: re-adding memories to queue...');
+        try {
+          // Re-fetch memories (in case of changes) and re-add to queue
+          const freshMemories = await getMemoriesInRadius(lat, lng, PREVIEW_RADIUS);
+          const freshWithAudio = freshMemories.filter(m => m.audio_url);
+          
+          if (freshWithAudio.length > 0) {
+            await addPreviewMemoriesToQueue(lat, lng, freshWithAudio);
+          }
+        } catch (err) {
+          console.warn('🔮 Continuous preview fetch error:', err);
+        }
+      }, PREVIEW_REFETCH_INTERVAL);
+      
+      toast.success(`Continuous preview started`, {
+        description: `Playing ${memoriesWithAudio.length} memories at ${lat.toFixed(4)}, ${lng.toFixed(4)}. Audio will loop continuously.`,
+        duration: 4000,
       });
 
     } catch (error) {
@@ -675,7 +724,7 @@ export function MapScreen({ userId, showOverlay = true, filterUserId, showAllMem
     } finally {
       setIsPreviewLoading(false);
     }
-  }, [isPreviewMode, userId]);
+  }, [isPreviewMode, userId, stopPreviewPlayback, addPreviewMemoriesToQueue]);
 
   // Handle map click for preview mode
   useEffect(() => {
@@ -703,9 +752,13 @@ export function MapScreen({ userId, showOverlay = true, filterUserId, showAllMem
     };
   }, [isMapLoaded, showOverlay, isPreviewMode, handlePreviewAtPoint]);
 
-  // Cleanup preview marker when preview mode is disabled
+  // Cleanup preview marker and stop playback when preview mode is disabled
   useEffect(() => {
     if (!isPreviewMode) {
+      // Stop continuous playback
+      stopPreviewPlayback();
+      
+      // Remove preview marker
       if (previewMarkerRef.current) {
         previewMarkerRef.current.remove();
         previewMarkerRef.current = null;
@@ -713,7 +766,18 @@ export function MapScreen({ userId, showOverlay = true, filterUserId, showAllMem
       setPreviewLocation(null);
       setPreviewMemories([]);
     }
-  }, [isPreviewMode]);
+  }, [isPreviewMode, stopPreviewPlayback]);
+
+  // Cleanup on component unmount
+  useEffect(() => {
+    return () => {
+      // Make sure to clean up the preview interval on unmount
+      if (previewIntervalRef.current) {
+        clearInterval(previewIntervalRef.current);
+        previewIntervalRef.current = null;
+      }
+    };
+  }, []);
 
   // Toggle preview mode
   const togglePreviewMode = useCallback(() => {
@@ -721,19 +785,20 @@ export function MapScreen({ userId, showOverlay = true, filterUserId, showAllMem
       const newMode = !prev;
       if (newMode) {
         toast.info('Preview Mode Enabled', {
-          description: 'Click anywhere on the map to hear memories at that location. No data will be saved.',
+          description: 'Click anywhere on the map to hear continuous audio at that location. No data will be saved.',
           duration: 5000,
         });
       } else {
-        // Stop any playing audio when disabling preview mode
-        audioQueue.mute();
+        // Stop continuous playback when disabling preview mode
+        stopPreviewPlayback();
         toast.info('Preview Mode Disabled', {
+          description: 'Continuous preview stopped.',
           duration: 2000,
         });
       }
       return newMode;
     });
-  }, []);
+  }, [stopPreviewPlayback]);
 
   return (
     <div className="relative w-full h-full overflow-hidden" style={{ height: '100%', width: '100%', minHeight: 0 }}>
@@ -913,21 +978,34 @@ export function MapScreen({ userId, showOverlay = true, filterUserId, showAllMem
                   <span className="font-terminal text-white text-sm">&gt; PREVIEW_AT_POINT:</span>
                 </div>
                 <p className="font-terminal text-gray-400 text-xs mb-3">
-                  Click anywhere on the map to hear the audio mashup that would play if you were physically at that location. No data will be saved.
+                  Click anywhere on the map to hear <span className="text-cyan-400">continuous</span> audio that would play if you were physically at that location. Audio loops indefinitely until stopped. No data will be saved.
                 </p>
-                <Button
-                  onClick={togglePreviewMode}
-                  variant="outline"
-                  size="sm"
-                  className={`w-full font-terminal ${
-                    isPreviewMode 
-                      ? 'bg-cyan-500 text-black border-cyan-500 hover:bg-cyan-400' 
-                      : 'bg-black text-cyan-400 border-cyan-400 hover:bg-cyan-400 hover:text-black'
-                  }`}
-                >
-                  <Ghost className="h-4 w-4 mr-2" />
-                  {isPreviewMode ? 'Preview Mode: ON' : 'Enable Preview Mode'}
-                </Button>
+                <div className="flex gap-2">
+                  <Button
+                    onClick={togglePreviewMode}
+                    variant="outline"
+                    size="sm"
+                    className={`flex-1 font-terminal ${
+                      isPreviewMode 
+                        ? 'bg-cyan-500 text-black border-cyan-500 hover:bg-cyan-400' 
+                        : 'bg-black text-cyan-400 border-cyan-400 hover:bg-cyan-400 hover:text-black'
+                    }`}
+                  >
+                    <Ghost className="h-4 w-4 mr-2" />
+                    {isPreviewMode ? 'Preview Mode: ON' : 'Enable Preview Mode'}
+                  </Button>
+                  {isGhostPlaying && (
+                    <Button
+                      onClick={stopPreviewPlayback}
+                      variant="outline"
+                      size="sm"
+                      className="font-terminal bg-red-500/20 text-red-400 border-red-400 hover:bg-red-500 hover:text-white"
+                    >
+                      <X className="h-4 w-4 mr-1" />
+                      Stop
+                    </Button>
+                  )}
+                </div>
                 {isPreviewMode && previewLocation && (
                   <div className="mt-2 font-terminal text-cyan-400 text-xs">
                     <div className="flex items-center gap-1">
@@ -946,6 +1024,12 @@ export function MapScreen({ userId, showOverlay = true, filterUserId, showAllMem
                         Found {previewMemories.length} memories ({previewMemories.filter(m => m.audio_url).length} with audio)
                       </div>
                     )}
+                    {isGhostPlaying && (
+                      <div className="flex items-center gap-1 mt-1 text-cyan-300 animate-pulse">
+                        <Volume2 className="h-3 w-3" />
+                        Continuous playback active...
+                      </div>
+                    )}
                   </div>
                 )}
               </div>
@@ -962,14 +1046,37 @@ export function MapScreen({ userId, showOverlay = true, filterUserId, showAllMem
           {/* Preview Mode Floating Indicator (when filter panel is closed) */}
           {isPreviewMode && !showFilters && (
             <div className="mt-2 flex items-center gap-2">
-              <div className="flex-1 px-3 py-2 bg-cyan-500/90 rounded font-terminal text-black text-xs flex items-center gap-2">
+              <div className={`flex-1 px-3 py-2 rounded font-terminal text-xs flex items-center gap-2 ${
+                isGhostPlaying 
+                  ? 'bg-green-500/90 text-black' 
+                  : 'bg-cyan-500/90 text-black'
+              }`}>
                 <Ghost className="h-4 w-4 animate-pulse" />
-                <span className="flex-1">Preview Mode Active - Click map to hear audio</span>
+                <span className="flex-1">
+                  {isGhostPlaying 
+                    ? `Continuous playback at ${previewLocation?.lat.toFixed(4)}, ${previewLocation?.lng.toFixed(4)}`
+                    : 'Preview Mode Active - Click map to hear audio'
+                  }
+                </span>
+                {isGhostPlaying && (
+                  <Button
+                    onClick={stopPreviewPlayback}
+                    variant="ghost"
+                    size="sm"
+                    className="h-6 px-2 text-black hover:bg-red-500 hover:text-white font-terminal text-xs"
+                  >
+                    Stop
+                  </Button>
+                )}
                 <Button
                   onClick={togglePreviewMode}
                   variant="ghost"
                   size="sm"
-                  className="h-6 px-2 text-black hover:bg-cyan-600 font-terminal text-xs"
+                  className={`h-6 px-2 font-terminal text-xs ${
+                    isGhostPlaying 
+                      ? 'text-black hover:bg-green-600' 
+                      : 'text-black hover:bg-cyan-600'
+                  }`}
                 >
                   <X className="h-3 w-3" />
                 </Button>
