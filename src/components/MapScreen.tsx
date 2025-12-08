@@ -1,5 +1,5 @@
 // Berkeley Memory Map - Main Map Component
-import React, { useEffect, useRef, useState, useCallback } from 'react';
+import React, { useEffect, useRef, useState, useCallback, useMemo } from 'react';
 import mapboxgl from 'mapbox-gl';
 import 'mapbox-gl/dist/mapbox-gl.css';
 import { useGeofencing } from '@/hooks/useGeofencing';
@@ -7,7 +7,8 @@ import { AddMemorySheet } from '@/components/AddMemorySheet';
 import { DevPortal } from '@/components/DevPortal';
 import { SecretCodeWindow } from '@/components/SecretCodeWindow';
 import { Button } from '@/components/ui/button';
-import { X } from 'lucide-react';
+import { Input } from '@/components/ui/input';
+import { X, Search, Filter, ChevronDown, ChevronUp, Play, Pause } from 'lucide-react';
 import { BERKELEY_CAMPUS_CENTER, BERKELEY_CAMPUS_ZOOM } from '@/types/memory';
 import type { Memory } from '@/types/memory';
 import { supabase } from '@/integrations/supabase/client';
@@ -26,9 +27,11 @@ if (MAPBOX_TOKEN) {
 interface MapScreenProps {
   userId?: string;
   showOverlay?: boolean; // Whether to show the white overlay and buttons
+  filterUserId?: string; // Optional: filter memories by specific user ID (for admin/debug views)
+  showAllMemories?: boolean; // Optional: show all memories instead of filtering by user (default: false)
 }
 
-export function MapScreen({ userId, showOverlay = true }: MapScreenProps) {
+export function MapScreen({ userId, showOverlay = true, filterUserId, showAllMemories = false }: MapScreenProps) {
   const mapContainer = useRef<HTMLDivElement>(null);
   const map = useRef<mapboxgl.Map | null>(null);
   const markersRef = useRef<mapboxgl.Marker[]>([]); // Store marker references
@@ -41,6 +44,23 @@ export function MapScreen({ userId, showOverlay = true }: MapScreenProps) {
   const [showDevPortal, setShowDevPortal] = useState(false);
   const [showSecretCode, setShowSecretCode] = useState(false);
   const [selectedMemory, setSelectedMemory] = useState<Memory | null>(null);
+  
+  // Search and filter state
+  const [searchQuery, setSearchQuery] = useState('');
+  const [userIdFilterInput, setUserIdFilterInput] = useState('');
+  const [showFilters, setShowFilters] = useState(false);
+  const [activeUserIdFilter, setActiveUserIdFilter] = useState<string | undefined>(filterUserId);
+  
+  // Date filter state
+  const [startDate, setStartDate] = useState<string>('');
+  const [endDate, setEndDate] = useState<string>('');
+  const [activeDateFilter, setActiveDateFilter] = useState<{ start?: string; end?: string }>({});
+
+  // Audio player state
+  const audioRef = useRef<HTMLAudioElement | null>(null);
+  const [isPlaying, setIsPlaying] = useState(false);
+  const [audioDuration, setAudioDuration] = useState(0);
+  const [audioCurrentTime, setAudioCurrentTime] = useState(0);
 
   // Geofencing hook (disabled for now)
   const {
@@ -122,65 +142,222 @@ export function MapScreen({ userId, showOverlay = true }: MapScreenProps) {
     }
   }, [showOverlay]);
 
-  // Load all memories from Supabase database
+  // Load memories from Supabase database
+  // - If showAllMemories is true: show all public memories + user's own memories
+  // - If filterUserId is provided: show only that specific user's memories
+  // - Otherwise: show only the current authenticated user's memories
   useEffect(() => {
-    const loadAllMemories = async () => {
+    const loadMemories = async () => {
       try {
-        console.log('Loading memories from Supabase...');
+        // Determine which user ID to filter by (activeUserIdFilter takes priority)
+        const effectiveUserId = activeUserIdFilter ?? filterUserId ?? userId;
         
-        // Load all public memories from Supabase, plus user's own memories
+        // If showAllMemories is true, use the original behavior (public + user's own)
+        if (showAllMemories) {
+          console.log('Loading all memories (public + user own)...');
+          
+          let query = supabase
+            .from('memories')
+            .select('*')
+            .eq('privacy', 'public');
+          
+          if (userId) {
+            const { data: publicMemories, error: publicError } = await query;
+            
+            if (publicError) {
+              console.error('Error loading public memories:', publicError);
+            }
+            
+            const { data: userMemories, error: userError } = await supabase
+              .from('memories')
+              .select('*')
+              .eq('author_id', userId);
+            
+            if (userError) {
+              console.error('Error loading user memories:', userError);
+            }
+            
+            const allMemoriesMap = new Map();
+            (publicMemories || []).forEach(m => allMemoriesMap.set(m.id, m));
+            (userMemories || []).forEach(m => allMemoriesMap.set(m.id, m));
+            
+            const combinedMemories = Array.from(allMemoriesMap.values());
+            console.log(`Loaded ${combinedMemories.length} memories (all mode)`);
+            setAllMemories(combinedMemories);
+          } else {
+            const { data, error } = await query;
+            if (error) {
+              console.error('Error loading memories:', error);
+              return;
+            }
+            console.log(`Loaded ${data?.length || 0} public memories`);
+            setAllMemories(data || []);
+          }
+          return;
+        }
+        
+        // Filter by specific user ID
+        if (!effectiveUserId) {
+          console.log('No user ID available, showing empty state');
+          setAllMemories([]);
+          return;
+        }
+        
+        console.log(`Loading memories for user: ${effectiveUserId}`, {
+          dateFilter: activeDateFilter
+        });
+        
+        // Build query with optional date filters
         let query = supabase
           .from('memories')
           .select('*')
-          .eq('privacy', 'public'); // Get public memories
+          .eq('author_id', effectiveUserId);
         
-        // If user is logged in, also get their own memories (private and friends)
-        if (userId) {
-          const { data: publicMemories, error: publicError } = await query;
-          
-          if (publicError) {
-            console.error('Error loading public memories:', publicError);
-          }
-          
-          // Get user's own memories (all privacy levels)
-          const { data: userMemories, error: userError } = await supabase
-            .from('memories')
-            .select('*')
-            .eq('author_id', userId);
-          
-          if (userError) {
-            console.error('Error loading user memories:', userError);
-          }
-          
-          // Combine and deduplicate by ID
-          const allMemoriesMap = new Map();
-          
-          (publicMemories || []).forEach(m => allMemoriesMap.set(m.id, m));
-          (userMemories || []).forEach(m => allMemoriesMap.set(m.id, m));
-          
-          const combinedMemories = Array.from(allMemoriesMap.values());
-          console.log(`Loaded ${combinedMemories.length} memories from Supabase`);
-          setAllMemories(combinedMemories);
-        } else {
-          // No user - just get public memories
-          const { data, error } = await query;
-          
-          if (error) {
-            console.error('Error loading memories:', error);
-            console.error('Error details:', error.message, error.code, error.hint);
-            return;
-          }
-          
-          console.log(`Loaded ${data?.length || 0} public memories from Supabase`);
-          setAllMemories(data || []);
+        // Apply date filters if set
+        if (activeDateFilter.start) {
+          const startDateTime = `${activeDateFilter.start}T00:00:00Z`;
+          query = query.gte('created_at', startDateTime);
+          console.log(`Filtering from: ${startDateTime}`);
         }
+        
+        if (activeDateFilter.end) {
+          const endDateTime = `${activeDateFilter.end}T23:59:59Z`;
+          query = query.lte('created_at', endDateTime);
+          console.log(`Filtering to: ${endDateTime}`);
+        }
+        
+        const { data, error } = await query.order('created_at', { ascending: false });
+        
+        if (error) {
+          console.error('Error loading user memories:', error);
+          setAllMemories([]);
+          return;
+        }
+        
+        console.log(`Loaded ${data?.length || 0} memories for user ${effectiveUserId}`);
+        setAllMemories(data || []);
       } catch (err) {
         console.error('Failed to load memories:', err);
+        setAllMemories([]);
       }
     };
 
-    loadAllMemories();
-  }, [userId]);
+    loadMemories();
+  }, [userId, filterUserId, showAllMemories, activeUserIdFilter, activeDateFilter]);
+
+  // Filter memories based on search query
+  const filteredMemories = useMemo(() => {
+    if (!searchQuery.trim()) {
+      return allMemories;
+    }
+    
+    const query = searchQuery.toLowerCase().trim();
+    return allMemories.filter(memory => {
+      const searchableText = [
+        memory.text,
+        memory.summary,
+        memory.place_name,
+        ...(memory.tags || []),
+        ...(memory.extracted_people || []),
+      ]
+        .filter(Boolean)
+        .join(' ')
+        .toLowerCase();
+      
+      return searchableText.includes(query);
+    });
+  }, [allMemories, searchQuery]);
+
+  // Apply user ID filter
+  const handleApplyUserIdFilter = () => {
+    const trimmedId = userIdFilterInput.trim();
+    setActiveUserIdFilter(trimmedId || undefined);
+  };
+
+  // Clear user ID filter
+  const handleClearUserIdFilter = () => {
+    setUserIdFilterInput('');
+    setActiveUserIdFilter(undefined);
+  };
+
+  // Apply date filter
+  const handleApplyDateFilter = () => {
+    setActiveDateFilter({
+      start: startDate || undefined,
+      end: endDate || undefined,
+    });
+  };
+
+  // Clear date filter
+  const handleClearDateFilter = () => {
+    setStartDate('');
+    setEndDate('');
+    setActiveDateFilter({});
+  };
+
+  // Quick date filter presets
+  const handleQuickDateFilter = (days: number) => {
+    const now = new Date();
+    const past = new Date(Date.now() - days * 24 * 60 * 60 * 1000);
+    setStartDate(past.toISOString().split('T')[0]);
+    setEndDate(now.toISOString().split('T')[0]);
+    setActiveDateFilter({
+      start: past.toISOString().split('T')[0],
+      end: now.toISOString().split('T')[0],
+    });
+  };
+
+  // Format time in mm:ss format
+  const formatTime = (seconds: number): string => {
+    if (!seconds || Number.isNaN(seconds) || !Number.isFinite(seconds)) return '0:00';
+    const m = Math.floor(seconds / 60);
+    const s = Math.floor(seconds % 60).toString().padStart(2, '0');
+    return `${m}:${s}`;
+  };
+
+  // Audio player handlers
+  const handleAudioLoadedMetadata = () => {
+    if (audioRef.current) {
+      setAudioDuration(audioRef.current.duration);
+    }
+  };
+
+  const handleAudioTimeUpdate = () => {
+    if (audioRef.current) {
+      setAudioCurrentTime(audioRef.current.currentTime);
+    }
+  };
+
+  const handleAudioSeek = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const newTime = Number(e.target.value);
+    setAudioCurrentTime(newTime);
+    if (audioRef.current) {
+      audioRef.current.currentTime = newTime;
+    }
+  };
+
+  const toggleAudioPlayback = () => {
+    if (audioRef.current) {
+      if (isPlaying) {
+        audioRef.current.pause();
+      } else {
+        audioRef.current.play();
+      }
+      setIsPlaying(!isPlaying);
+    }
+  };
+
+  const handleAudioEnded = () => {
+    setIsPlaying(false);
+    setAudioCurrentTime(0);
+  };
+
+  // Reset audio state when selected memory changes
+  useEffect(() => {
+    setIsPlaying(false);
+    setAudioDuration(0);
+    setAudioCurrentTime(0);
+  }, [selectedMemory?.id]);
 
   // Helper function to extract and abbreviate filename from audio URL
   const getAbbreviatedFileName = (audioUrl: string | undefined): string => {
@@ -217,7 +394,7 @@ export function MapScreen({ userId, showOverlay = true }: MapScreenProps) {
   useEffect(() => {
     if (!map.current || !isMapLoaded || showOverlay) return;
 
-    console.log(`Creating ${allMemories.length} markers on map...`);
+    console.log(`Creating ${filteredMemories.length} markers on map (${allMemories.length} total, filtered by search: "${searchQuery}")...`);
 
     // Remove existing markers properly
     markersRef.current.forEach(marker => {
@@ -225,8 +402,8 @@ export function MapScreen({ userId, showOverlay = true }: MapScreenProps) {
     });
     markersRef.current = [];
 
-    // Show all Supabase memories as pins on the map
-    allMemories.forEach((memory) => {
+    // Show filtered memories as pins on the map
+    filteredMemories.forEach((memory) => {
       // Skip memories without valid coordinates
       if (!memory.lat || !memory.lng || isNaN(memory.lat) || isNaN(memory.lng)) {
         console.warn('Skipping memory with invalid coordinates:', memory.id);
@@ -244,21 +421,8 @@ export function MapScreen({ userId, showOverlay = true }: MapScreenProps) {
         box-shadow: 0 2px 4px rgba(0,0,0,0.3);
         cursor: pointer;
         pointer-events: auto;
-        transition: transform 0.2s;
       `;
 
-      // Hover effect - use scale transform
-      el.addEventListener('mouseenter', () => {
-        el.style.transform = 'scale(1.3)';
-        el.style.zIndex = '1000'; // Bring to front on hover
-      });
-      el.addEventListener('mouseleave', () => {
-        el.style.transform = 'scale(1)';
-        el.style.zIndex = '1'; // Reset z-index
-      });
-
-      const abbreviatedFileName = getAbbreviatedFileName(memory.audio_url);
-      
       // Store coordinates to lock marker position
       const lockedLng = memory.lng;
       const lockedLat = memory.lat;
@@ -298,7 +462,7 @@ export function MapScreen({ userId, showOverlay = true }: MapScreenProps) {
     });
     
     console.log(`Successfully created ${markersRef.current.length} markers on map from Supabase`);
-  }, [allMemories, isMapLoaded, showOverlay]);
+  }, [filteredMemories, allMemories, searchQuery, isMapLoaded, showOverlay]);
 
   // Track output playing state - stays true when Output is clicked until turned off
   // Don't automatically update based on currentlyPlaying - only on button click
@@ -386,6 +550,179 @@ export function MapScreen({ userId, showOverlay = true }: MapScreenProps) {
         className="absolute inset-0 w-full h-full" 
         style={{ zIndex: 1, minHeight: 0, pointerEvents: showOverlay ? 'none' : 'auto' }} 
       />
+
+      {/* Search Bar - Only visible on /map route (when overlay is hidden) */}
+      {!showOverlay && (
+        <div className="absolute top-4 left-4 right-4 z-20">
+          {/* Main Search Bar */}
+          <div className="flex gap-2">
+            <div className="relative flex-1">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
+              <Input
+                type="text"
+                placeholder="Search memories..."
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                className="pl-10 bg-black/90 border-white text-white placeholder:text-gray-400 font-terminal focus:ring-white focus:border-white"
+              />
+            </div>
+            <Button
+              onClick={() => setShowFilters(!showFilters)}
+              variant="outline"
+              size="icon"
+              className={`bg-black/90 border-white text-white hover:bg-white hover:text-black ${showFilters ? 'bg-white text-black' : ''}`}
+            >
+              <Filter className="h-4 w-4" />
+            </Button>
+          </div>
+
+          {/* Filter Panel - Expandable */}
+          {showFilters && (
+            <div className="mt-2 p-3 bg-black/90 border border-white rounded">
+              <div className="flex items-center gap-2 mb-2">
+                <span className="font-terminal text-white text-sm">&gt; USER_ID_FILTER:</span>
+              </div>
+              <div className="flex gap-2">
+                <Input
+                  type="text"
+                  placeholder="Enter user ID (UUID)"
+                  value={userIdFilterInput}
+                  onChange={(e) => setUserIdFilterInput(e.target.value)}
+                  className="flex-1 bg-black border-white text-white placeholder:text-gray-500 font-terminal text-sm focus:ring-white focus:border-white"
+                />
+                <Button
+                  onClick={handleApplyUserIdFilter}
+                  variant="outline"
+                  size="sm"
+                  className="bg-white text-black border-white hover:bg-gray-200 font-terminal"
+                >
+                  Apply
+                </Button>
+                {activeUserIdFilter && (
+                  <Button
+                    onClick={handleClearUserIdFilter}
+                    variant="outline"
+                    size="sm"
+                    className="bg-black text-white border-white hover:bg-white hover:text-black font-terminal"
+                  >
+                    Clear
+                  </Button>
+                )}
+              </div>
+              {activeUserIdFilter && (
+                <div className="mt-2 font-terminal text-green-400 text-xs">
+                  ✓ Filtering by user: {activeUserIdFilter.substring(0, 8)}...
+                </div>
+              )}
+
+              {/* Date Filter Section */}
+              <div className="mt-4 pt-3 border-t border-gray-700">
+                <div className="flex items-center gap-2 mb-2">
+                  <span className="font-terminal text-white text-sm">&gt; DATE_FILTER:</span>
+                </div>
+                
+                {/* Quick Filter Buttons */}
+                <div className="flex gap-2 mb-2 flex-wrap">
+                  <Button
+                    onClick={() => handleQuickDateFilter(7)}
+                    variant="outline"
+                    size="sm"
+                    className="bg-black text-white border-gray-600 hover:bg-white hover:text-black font-terminal text-xs px-2 py-1"
+                  >
+                    Last 7 days
+                  </Button>
+                  <Button
+                    onClick={() => handleQuickDateFilter(30)}
+                    variant="outline"
+                    size="sm"
+                    className="bg-black text-white border-gray-600 hover:bg-white hover:text-black font-terminal text-xs px-2 py-1"
+                  >
+                    Last 30 days
+                  </Button>
+                  <Button
+                    onClick={() => handleQuickDateFilter(90)}
+                    variant="outline"
+                    size="sm"
+                    className="bg-black text-white border-gray-600 hover:bg-white hover:text-black font-terminal text-xs px-2 py-1"
+                  >
+                    Last 90 days
+                  </Button>
+                </div>
+
+                {/* Custom Date Range */}
+                <div className="flex gap-2 items-center mb-2">
+                  <div className="flex-1">
+                    <label className="font-terminal text-gray-400 text-xs block mb-1">From:</label>
+                    <Input
+                      type="date"
+                      value={startDate}
+                      onChange={(e) => setStartDate(e.target.value)}
+                      className="bg-black border-white text-white font-terminal text-sm focus:ring-white focus:border-white"
+                    />
+                  </div>
+                  <div className="flex-1">
+                    <label className="font-terminal text-gray-400 text-xs block mb-1">To:</label>
+                    <Input
+                      type="date"
+                      value={endDate}
+                      onChange={(e) => setEndDate(e.target.value)}
+                      className="bg-black border-white text-white font-terminal text-sm focus:ring-white focus:border-white"
+                    />
+                  </div>
+                </div>
+
+                <div className="flex gap-2">
+                  <Button
+                    onClick={handleApplyDateFilter}
+                    variant="outline"
+                    size="sm"
+                    className="bg-white text-black border-white hover:bg-gray-200 font-terminal"
+                  >
+                    Apply Dates
+                  </Button>
+                  {(activeDateFilter.start || activeDateFilter.end) && (
+                    <Button
+                      onClick={handleClearDateFilter}
+                      variant="outline"
+                      size="sm"
+                      className="bg-black text-white border-white hover:bg-white hover:text-black font-terminal"
+                    >
+                      Clear Dates
+                    </Button>
+                  )}
+                </div>
+
+                {(activeDateFilter.start || activeDateFilter.end) && (
+                  <div className="mt-2 font-terminal text-green-400 text-xs">
+                    ✓ Date filter: {activeDateFilter.start || 'any'} to {activeDateFilter.end || 'any'}
+                  </div>
+                )}
+              </div>
+
+              <div className="mt-3 pt-3 border-t border-gray-700 font-terminal text-gray-400 text-xs">
+                Showing {filteredMemories.length} of {allMemories.length} memories
+              </div>
+              {userId && (
+                <div className="mt-2 pt-2 border-t border-gray-700">
+                  <div className="font-terminal text-gray-500 text-xs">
+                    Your User ID:
+                  </div>
+                  <div className="font-terminal text-blue-400 text-xs select-all break-all">
+                    {userId}
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* Search Results Count (when searching) */}
+          {searchQuery && !showFilters && (
+            <div className="mt-2 px-3 py-1 bg-black/80 rounded font-terminal text-gray-300 text-xs">
+              Found {filteredMemories.length} memories matching "{searchQuery}"
+            </div>
+          )}
+        </div>
+      )}
       
       {/* White Overlay - Covers the entire map (only if showOverlay is true) */}
       {showOverlay && (
@@ -502,17 +839,65 @@ export function MapScreen({ userId, showOverlay = true }: MapScreenProps) {
           {selectedMemory.audio_url ? (
             <div className="mt-3 p-3 bg-gray-900 rounded border border-gray-700">
               <p className="font-terminal text-gray-400 text-xs mb-2">🎧 Audio Memory</p>
+              
+              {/* Hidden audio element */}
               <audio
-                controls
+                ref={audioRef}
                 src={selectedMemory.audio_url}
-                className="w-full h-10"
-                style={{ 
-                  filter: 'invert(1)', 
-                  backgroundColor: 'transparent'
-                }}
-              >
-                Your browser does not support the audio element.
-              </audio>
+                preload="metadata"
+                onLoadedMetadata={handleAudioLoadedMetadata}
+                onTimeUpdate={handleAudioTimeUpdate}
+                onEnded={handleAudioEnded}
+                onPlay={() => setIsPlaying(true)}
+                onPause={() => setIsPlaying(false)}
+              />
+              
+              {/* Custom Audio Player UI */}
+              <div className="flex items-center gap-3">
+                {/* Play/Pause Button */}
+                <Button
+                  onClick={toggleAudioPlayback}
+                  variant="outline"
+                  size="icon"
+                  className="h-10 w-10 rounded-full bg-white text-black border-white hover:bg-gray-200 flex-shrink-0"
+                >
+                  {isPlaying ? (
+                    <Pause className="h-5 w-5" />
+                  ) : (
+                    <Play className="h-5 w-5 ml-0.5" />
+                  )}
+                </Button>
+                
+                {/* Timeline and Time Display */}
+                <div className="flex-1 min-w-0">
+                  {/* Progress Bar / Scrubber */}
+                  <input
+                    type="range"
+                    min={0}
+                    max={audioDuration || 0}
+                    step={0.1}
+                    value={audioCurrentTime}
+                    onChange={handleAudioSeek}
+                    disabled={!audioDuration}
+                    className="w-full h-2 bg-gray-700 rounded-lg appearance-none cursor-pointer accent-white disabled:opacity-50 disabled:cursor-not-allowed"
+                    style={{
+                      background: audioDuration
+                        ? `linear-gradient(to right, white ${(audioCurrentTime / audioDuration) * 100}%, #374151 ${(audioCurrentTime / audioDuration) * 100}%)`
+                        : '#374151'
+                    }}
+                  />
+                  
+                  {/* Time Display */}
+                  <div className="flex justify-between mt-1">
+                    <span className="font-terminal text-white text-xs">
+                      {formatTime(audioCurrentTime)}
+                    </span>
+                    <span className="font-terminal text-gray-400 text-xs">
+                      {formatTime(audioDuration)}
+                    </span>
+                  </div>
+                </div>
+              </div>
             </div>
           ) : (
             <p className="font-terminal text-gray-500 text-sm mt-3 italic">

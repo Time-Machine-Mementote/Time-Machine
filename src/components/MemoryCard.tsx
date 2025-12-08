@@ -1,5 +1,5 @@
-import { useState } from 'react';
-import { Heart, Clock, Play, Eye, MoreVertical, Mic, Image, FileText, Sparkles } from 'lucide-react';
+import { useState, useRef } from 'react';
+import { Heart, Clock, Play, Pause, Eye, MoreVertical, Mic, Image, FileText, Sparkles } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Card, CardContent, CardHeader } from '@/components/ui/card';
@@ -22,6 +22,56 @@ const MemoryCard = ({ entry, onToggleFavorite }: MemoryCardProps) => {
   const [isPlaying, setIsPlaying] = useState(false);
   const [isGeneratingMemory, setIsGeneratingMemory] = useState(false);
   const memoryService = new MemoryService();
+
+  // Audio player state
+  const audioRef = useRef<HTMLAudioElement | null>(null);
+  const [audioDuration, setAudioDuration] = useState(0);
+  const [audioCurrentTime, setAudioCurrentTime] = useState(0);
+
+  // Format audio time in m:ss format
+  const formatAudioTime = (seconds: number): string => {
+    if (!seconds || Number.isNaN(seconds) || !Number.isFinite(seconds)) return '0:00';
+    const m = Math.floor(seconds / 60);
+    const s = Math.floor(seconds % 60).toString().padStart(2, '0');
+    return `${m}:${s}`;
+  };
+
+  // Audio player handlers
+  const handleAudioLoadedMetadata = () => {
+    if (audioRef.current) {
+      setAudioDuration(audioRef.current.duration);
+    }
+  };
+
+  const handleAudioTimeUpdate = () => {
+    if (audioRef.current) {
+      setAudioCurrentTime(audioRef.current.currentTime);
+    }
+  };
+
+  const handleAudioSeek = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const newTime = Number(e.target.value);
+    setAudioCurrentTime(newTime);
+    if (audioRef.current) {
+      audioRef.current.currentTime = newTime;
+    }
+  };
+
+  const toggleAudioPlayback = () => {
+    if (audioRef.current) {
+      if (isPlaying) {
+        audioRef.current.pause();
+      } else {
+        audioRef.current.play();
+      }
+      setIsPlaying(!isPlaying);
+    }
+  };
+
+  const handleAudioEnded = () => {
+    setIsPlaying(false);
+    setAudioCurrentTime(0);
+  };
 
   const formatDate = (timestamp: string) => {
     return new Date(timestamp).toLocaleDateString('en-US', {
@@ -235,15 +285,65 @@ const MemoryCard = ({ entry, onToggleFavorite }: MemoryCardProps) => {
               {entry.generated_memory.audio_url && (
                 <div className="mb-4">
                   <h5 className="text-sm font-medium text-foreground mb-2">Audio Narration</h5>
-                  <audio 
-                    controls 
-                    className="w-full h-10"
+                  
+                  {/* Hidden audio element */}
+                  <audio
+                    ref={audioRef}
+                    src={entry.generated_memory.audio_url}
                     preload="metadata"
-                  >
-                    <source src={entry.generated_memory.audio_url} type="audio/mpeg" />
-                    <source src={entry.generated_memory.audio_url} type="audio/mp3" />
-                    Your browser does not support the audio element.
-                  </audio>
+                    onLoadedMetadata={handleAudioLoadedMetadata}
+                    onTimeUpdate={handleAudioTimeUpdate}
+                    onEnded={handleAudioEnded}
+                    onPlay={() => setIsPlaying(true)}
+                    onPause={() => setIsPlaying(false)}
+                  />
+                  
+                  {/* Custom Audio Player UI */}
+                  <div className="flex items-center gap-3 p-3 bg-muted/50 rounded-lg border">
+                    {/* Play/Pause Button */}
+                    <Button
+                      onClick={toggleAudioPlayback}
+                      variant="outline"
+                      size="icon"
+                      className="h-10 w-10 rounded-full flex-shrink-0"
+                    >
+                      {isPlaying ? (
+                        <Pause className="h-5 w-5" />
+                      ) : (
+                        <Play className="h-5 w-5 ml-0.5" />
+                      )}
+                    </Button>
+                    
+                    {/* Timeline and Time Display */}
+                    <div className="flex-1 min-w-0">
+                      {/* Progress Bar / Scrubber */}
+                      <input
+                        type="range"
+                        min={0}
+                        max={audioDuration || 0}
+                        step={0.1}
+                        value={audioCurrentTime}
+                        onChange={handleAudioSeek}
+                        disabled={!audioDuration}
+                        className="w-full h-2 bg-muted rounded-lg appearance-none cursor-pointer accent-primary disabled:opacity-50 disabled:cursor-not-allowed"
+                        style={{
+                          background: audioDuration
+                            ? `linear-gradient(to right, hsl(var(--primary)) ${(audioCurrentTime / audioDuration) * 100}%, hsl(var(--muted)) ${(audioCurrentTime / audioDuration) * 100}%)`
+                            : 'hsl(var(--muted))'
+                        }}
+                      />
+                      
+                      {/* Time Display */}
+                      <div className="flex justify-between mt-1">
+                        <span className="text-xs text-muted-foreground">
+                          {formatAudioTime(audioCurrentTime)}
+                        </span>
+                        <span className="text-xs text-muted-foreground">
+                          {formatAudioTime(audioDuration)}
+                        </span>
+                      </div>
+                    </div>
+                  </div>
                 </div>
               )}
 
