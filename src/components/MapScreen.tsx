@@ -72,7 +72,7 @@ export function MapScreen({ userId, showOverlay = true, filterUserId, showAllMem
   const [isGhostPlaying, setIsGhostPlaying] = useState(false);
   const previewMarkerRef = useRef<mapboxgl.Marker | null>(null);
   const previewIntervalRef = useRef<NodeJS.Timeout | null>(null); // For continuous playback
-  const PREVIEW_RADIUS = 200; // 200 meters
+  const PREVIEW_RADIUS = 100; // 100 meters
   const PREVIEW_REFETCH_INTERVAL = 10000; // Re-add memories every 10 seconds for continuous playback
 
   // Geofencing hook (disabled for now)
