@@ -16,6 +16,7 @@ import { supabase } from '@/integrations/supabase/client';
 import { audioQueue } from '@/utils/audioQueue';
 import { getMemoriesInRadius } from '@/services/memoryApi';
 import { toast } from 'sonner';
+import { useAuth } from '@/contexts/AuthContext';
 
 // Set Mapbox access token
 const MAPBOX_TOKEN = import.meta.env.VITE_MAPBOX_TOKEN;
@@ -199,43 +200,43 @@ export function MapScreen({ userId, showOverlay = true, filterUserId, showAllMem
         if (showAllMemories) {
           console.log('Loading all memories (public + user own)...');
           
-          let query = supabase
+        let query = supabase
+          .from('memories')
+          .select('*')
+            .eq('privacy', 'public');
+        
+        if (userId) {
+          const { data: publicMemories, error: publicError } = await query;
+          
+          if (publicError) {
+            console.error('Error loading public memories:', publicError);
+          }
+          
+          const { data: userMemories, error: userError } = await supabase
             .from('memories')
             .select('*')
-            .eq('privacy', 'public');
+            .eq('author_id', userId);
           
-          if (userId) {
-            const { data: publicMemories, error: publicError } = await query;
-            
-            if (publicError) {
-              console.error('Error loading public memories:', publicError);
-            }
-            
-            const { data: userMemories, error: userError } = await supabase
-              .from('memories')
-              .select('*')
-              .eq('author_id', userId);
-            
-            if (userError) {
-              console.error('Error loading user memories:', userError);
-            }
-            
-            const allMemoriesMap = new Map();
-            (publicMemories || []).forEach(m => allMemoriesMap.set(m.id, m));
-            (userMemories || []).forEach(m => allMemoriesMap.set(m.id, m));
-            
-            const combinedMemories = Array.from(allMemoriesMap.values());
-            console.log(`Loaded ${combinedMemories.length} memories (all mode)`);
-            setAllMemories(combinedMemories);
-          } else {
-            const { data, error } = await query;
-            if (error) {
-              console.error('Error loading memories:', error);
-              return;
-            }
-            console.log(`Loaded ${data?.length || 0} public memories`);
-            setAllMemories(data || []);
+          if (userError) {
+            console.error('Error loading user memories:', userError);
           }
+          
+          const allMemoriesMap = new Map();
+          (publicMemories || []).forEach(m => allMemoriesMap.set(m.id, m));
+          (userMemories || []).forEach(m => allMemoriesMap.set(m.id, m));
+          
+          const combinedMemories = Array.from(allMemoriesMap.values());
+            console.log(`Loaded ${combinedMemories.length} memories (all mode)`);
+          setAllMemories(combinedMemories);
+        } else {
+          const { data, error } = await query;
+          if (error) {
+            console.error('Error loading memories:', error);
+            return;
+          }
+            console.log(`Loaded ${data?.length || 0} public memories`);
+          setAllMemories(data || []);
+        }
           return;
         }
         
@@ -465,7 +466,7 @@ export function MapScreen({ userId, showOverlay = true, filterUserId, showAllMem
         cursor: pointer;
         pointer-events: auto;
       `;
-
+      
       // Store coordinates to lock marker position
       const lockedLng = memory.lng;
       const lockedLat = memory.lat;
@@ -543,9 +544,26 @@ export function MapScreen({ userId, showOverlay = true, filterUserId, showAllMem
   }, [showOverlay]);
 
   // Handle Input button - open recording sheet
+  const { user, openAuthModal } = useAuth();
+  const pendingMemoryInputRef = useRef(false);
+
   const handleInputClick = () => {
+    // Check if user is authenticated before opening memory input
+    if (!user) {
+      pendingMemoryInputRef.current = true;
+      openAuthModal();
+      return;
+    }
     setShowAddMemory(true);
   };
+
+  // Auto-open memory input after successful sign-in if user was trying to add memory
+  useEffect(() => {
+    if (user && pendingMemoryInputRef.current) {
+      pendingMemoryInputRef.current = false;
+      setShowAddMemory(true);
+    }
+  }, [user]);
 
   // Handle Output button - toggle audio playback
   // State only changes on user click - never automatically
@@ -1199,7 +1217,7 @@ export function MapScreen({ userId, showOverlay = true, filterUserId, showAllMem
           setIsRecording(false);
         }}
         userLocation={location ? { lat: location.lat, lng: location.lng, accuracy: accuracy || 0, timestamp: Date.now() } : null}
-        userId={userId}
+        userId={user?.id}
         onRecordingStateChange={setIsRecording}
       />
 
@@ -1229,7 +1247,7 @@ export function MapScreen({ userId, showOverlay = true, filterUserId, showAllMem
             <div className="flex-1 min-w-0 mr-3">
               <h3 className="font-terminal text-white text-lg truncate">
                 &gt; {selectedMemory.summary || selectedMemory.text || 'Untitled Memory'}
-              </h3>
+            </h3>
               <p className="font-terminal text-gray-400 text-sm">
                 {new Date(selectedMemory.created_at).toLocaleDateString('en-US', {
                   year: 'numeric',

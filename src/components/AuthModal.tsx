@@ -56,6 +56,7 @@ export function AuthModal({ isOpen, onClose, onSuccess }: AuthModalProps) {
         if (error) throw error
         
         // Success - close modal and trigger callback
+        // The auth context will automatically update user state
         onClose()
         onSuccess?.()
       }

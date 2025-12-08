@@ -7,6 +7,7 @@ import { toast } from 'sonner';
 import type { UserLocation } from '@/types/memory';
 import VoiceRecorder from '@/components/VoiceRecorder';
 import { uploadAudioToStorage } from '@/utils/audioStorage';
+import { useAuth } from '@/contexts/AuthContext';
 
 interface AddMemorySheetProps {
   isOpen: boolean;
@@ -17,6 +18,7 @@ interface AddMemorySheetProps {
 }
 
 export function AddMemorySheet({ isOpen, onClose, userLocation, userId, onRecordingStateChange }: AddMemorySheetProps) {
+  const { user, openAuthModal } = useAuth();
   const [audioBlob, setAudioBlob] = useState<string>('');
   const [isProcessing, setIsProcessing] = useState(false);
   const [isRecording, setIsRecording] = useState(false);
@@ -48,6 +50,13 @@ export function AddMemorySheet({ isOpen, onClose, userLocation, userId, onRecord
       return;
     }
 
+    // Check authentication before submitting
+    if (!user) {
+      toast.error('Please sign in to save your memory');
+      openAuthModal();
+      return;
+    }
+
     setIsProcessing(true);
 
     try {
@@ -57,7 +66,7 @@ export function AddMemorySheet({ isOpen, onClose, userLocation, userId, onRecord
 
       // Upload audio recording
       let audioUrl: string | null = null;
-      if (audioBlob && userId) {
+      if (audioBlob && user?.id) {
         try {
           // Convert base64 to Blob
           const base64Match = audioBlob.match(/^data:([^;]+);base64,(.+)$/);
@@ -74,7 +83,7 @@ export function AddMemorySheet({ isOpen, onClose, userLocation, userId, onRecord
 
             // Generate temp ID for upload
             const tempMemoryId = crypto.randomUUID();
-            audioUrl = await uploadAudioToStorage(audioBlobFile, tempMemoryId, userId);
+            audioUrl = await uploadAudioToStorage(audioBlobFile, tempMemoryId, user.id);
             
             if (!audioUrl) {
               toast.warning('Audio upload failed. Please try again.');
@@ -106,7 +115,7 @@ export function AddMemorySheet({ isOpen, onClose, userLocation, userId, onRecord
           privacy: 'public',
           summary: 'Voice recording',
           radius_m: 30,
-          author_id: userId || null,
+          author_id: user.id,
           extracted_people: [],
           audio_url: audioUrl,
         })

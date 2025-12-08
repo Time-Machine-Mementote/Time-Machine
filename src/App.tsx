@@ -5,9 +5,7 @@ import { BrowserRouter, Routes, Route } from "react-router-dom";
 import { AuthGuard } from "./components/AuthGuard";
 import { MapScreen } from "./components/MapScreen";
 import NotFound from "./pages/NotFound";
-import { useEffect, useState } from "react";
-import { supabase } from "@/integrations/supabase/client";
-import type { User } from "@supabase/supabase-js";
+import { useAuth } from "@/contexts/AuthContext";
 
 // Register service worker for background audio support
 if ('serviceWorker' in navigator && import.meta.env.PROD) {
@@ -37,25 +35,20 @@ if ('serviceWorker' in navigator && import.meta.env.PROD) {
   });
 }
 
+// Inner component that uses auth context
+function AppInner() {
+  const { user } = useAuth();
+
+  return (
+    <Routes>
+      <Route path="/" element={<MapScreen userId={user?.id} showOverlay={true} />} />
+      <Route path="/map" element={<MapScreen userId={user?.id} showOverlay={false} />} />
+      <Route path="*" element={<NotFound />} />
+    </Routes>
+  );
+}
+
 const App = () => {
-  const [user, setUser] = useState<User | null>(null);
-
-  useEffect(() => {
-    // Get initial session
-    supabase.auth.getSession().then(({ data: { session } }) => {
-      setUser(session?.user ?? null);
-    });
-
-    // Listen for auth changes
-    const {
-      data: { subscription },
-    } = supabase.auth.onAuthStateChange((_event, session) => {
-      setUser(session?.user ?? null);
-    });
-
-    return () => subscription.unsubscribe();
-  }, []);
-
   return (
     <>
       <TooltipProvider>
@@ -63,11 +56,7 @@ const App = () => {
         <Sonner />
         <BrowserRouter>
           <AuthGuard>
-          <Routes>
-            <Route path="/" element={<MapScreen userId={user?.id} showOverlay={true} />} />
-            <Route path="/map" element={<MapScreen userId={user?.id} showOverlay={false} />} />
-            <Route path="*" element={<NotFound />} />
-          </Routes>
+            <AppInner />
           </AuthGuard>
         </BrowserRouter>
       </TooltipProvider>

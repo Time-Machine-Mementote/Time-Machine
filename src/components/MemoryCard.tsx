@@ -11,6 +11,7 @@ type JournalEntry = Database['public']['Tables']['journal_entries']['Row'] & {
 import { MemoryService } from '@/services/memoryService';
 import { toast } from 'sonner';
 import { cn } from '@/lib/utils';
+import { useAuth } from '@/contexts/AuthContext';
 
 interface MemoryCardProps {
   entry: JournalEntry;
@@ -18,6 +19,7 @@ interface MemoryCardProps {
 }
 
 const MemoryCard = ({ entry, onToggleFavorite }: MemoryCardProps) => {
+  const { user, openAuthModal } = useAuth();
   const [isExpanded, setIsExpanded] = useState(false);
   const [isPlaying, setIsPlaying] = useState(false);
   const [isGeneratingMemory, setIsGeneratingMemory] = useState(false);
@@ -243,6 +245,13 @@ const MemoryCard = ({ entry, onToggleFavorite }: MemoryCardProps) => {
                 size="sm"
                 className="text-xs"
                 onClick={async () => {
+                  // Check authentication before generating memory
+                  if (!user) {
+                    toast.error('Please sign in to create memories');
+                    openAuthModal();
+                    return;
+                  }
+                  
                   setIsGeneratingMemory(true);
                   try {
                     await memoryService.generateMemory({
