@@ -8,7 +8,8 @@ import { DevPortal } from '@/components/DevPortal';
 import { SecretCodeWindow } from '@/components/SecretCodeWindow';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { X, Search, Filter, ChevronDown, ChevronUp, Play, Pause, MapPinned, Ghost, Loader2, Volume2 } from 'lucide-react';
+import { X, Search, Filter, ChevronDown, ChevronUp, Play, Pause, MapPinned, Ghost, Loader2, Volume2, Home } from 'lucide-react';
+import { useNavigate } from 'react-router-dom';
 import { BERKELEY_CAMPUS_CENTER, BERKELEY_CAMPUS_ZOOM } from '@/types/memory';
 import type { Memory, UserLocation } from '@/types/memory';
 import { supabase } from '@/integrations/supabase/client';
@@ -34,6 +35,7 @@ interface MapScreenProps {
 }
 
 export function MapScreen({ userId, showOverlay = true, filterUserId, showAllMemories = false }: MapScreenProps) {
+  const navigate = useNavigate();
   const mapContainer = useRef<HTMLDivElement>(null);
   const map = useRef<mapboxgl.Map | null>(null);
   const markersRef = useRef<mapboxgl.Marker[]>([]); // Store marker references
@@ -72,8 +74,36 @@ export function MapScreen({ userId, showOverlay = true, filterUserId, showAllMem
   const [isGhostPlaying, setIsGhostPlaying] = useState(false);
   const previewMarkerRef = useRef<mapboxgl.Marker | null>(null);
   const previewIntervalRef = useRef<NodeJS.Timeout | null>(null); // For continuous playback
-  const PREVIEW_RADIUS = 100; // 100 meters
+  const PREVIEW_RADIUS = 100; // 100 meters - bounding box for initial query
   const PREVIEW_REFETCH_INTERVAL = 10000; // Re-add memories every 10 seconds for continuous playback
+
+  // Calculate distance between two points using Haversine formula (same as main app)
+  // Returns distance in meters
+  const calculateDistance = useCallback((lat1: number, lng1: number, lat2: number, lng2: number): number => {
+    const R = 6371000; // Earth's radius in meters
+    const dLat = (lat2 - lat1) * Math.PI / 180;
+    const dLng = (lng2 - lng1) * Math.PI / 180;
+    const a = Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+              Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) *
+              Math.sin(dLng / 2) * Math.sin(dLng / 2);
+    const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+    return R * c;
+  }, []);
+
+  // Filter memories to only those where the preview point is within each memory's radius
+  // This matches the main app's behavior in useGeofencing
+  const filterMemoriesByRadius = useCallback((memories: Memory[], previewLat: number, previewLng: number): Memory[] => {
+    return memories.filter(memory => {
+      const distance = calculateDistance(previewLat, previewLng, memory.lat, memory.lng);
+      const isWithinRadius = distance <= memory.radius_m;
+      
+      if (!isWithinRadius) {
+        console.log(`🔮 Memory ${memory.id} filtered out: distance ${distance.toFixed(1)}m > radius ${memory.radius_m}m`);
+      }
+      
+      return isWithinRadius;
+    });
+  }, [calculateDistance]);
 
   // Geofencing hook (disabled for now)
   const {
@@ -653,32 +683,39 @@ export function MapScreen({ userId, showOverlay = true, filterUserId, showAllMem
     }
 
     try {
-      // Fetch memories in radius for this location
-      const memories = await getMemoriesInRadius(lat, lng, PREVIEW_RADIUS);
-      
-      console.log(`🔮 Found ${memories.length} memories near preview point`);
-      setPreviewMemories(memories);
+      // Step 1: Fetch memories in bounding box for this location
+      const memoriesInBoundingBox = await getMemoriesInRadius(lat, lng, PREVIEW_RADIUS);
+      console.log(`🔮 Found ${memoriesInBoundingBox.length} memories in ${PREVIEW_RADIUS}m bounding box`);
 
-      if (memories.length === 0) {
+      // Step 2: Apply strict radius filtering (same as main app)
+      // Each memory has its own radius_m - only include if preview point is within that radius
+      const memoriesInRadius = filterMemoriesByRadius(memoriesInBoundingBox, lat, lng);
+      console.log(`🔮 After radius filtering: ${memoriesInRadius.length} memories (filtered out ${memoriesInBoundingBox.length - memoriesInRadius.length})`);
+      
+      setPreviewMemories(memoriesInRadius);
+
+      if (memoriesInRadius.length === 0) {
         toast.info('No memories found at this location', {
-          description: `No audio memories within ${PREVIEW_RADIUS}m of this point.`,
+          description: `No memories with radius covering this point within ${PREVIEW_RADIUS}m.`,
           duration: 4000,
         });
         setIsPreviewLoading(false);
         return;
       }
 
-      // Filter to only memories with audio
-      const memoriesWithAudio = memories.filter(m => m.audio_url);
+      // Step 3: Filter to only memories with audio
+      const memoriesWithAudio = memoriesInRadius.filter(m => m.audio_url);
       
       if (memoriesWithAudio.length === 0) {
         toast.info('No audio memories at this location', {
-          description: `Found ${memories.length} memories but none have audio recordings.`,
+          description: `Found ${memoriesInRadius.length} memories but none have audio recordings.`,
           duration: 4000,
         });
         setIsPreviewLoading(false);
         return;
       }
+
+      console.log(`🔮 Final: ${memoriesWithAudio.length} memories with audio to play`);
 
       // Unlock audio first (required for mobile)
       await audioQueue.unlockAudio();
@@ -696,13 +733,15 @@ export function MapScreen({ userId, showOverlay = true, filterUserId, showAllMem
       // Start continuous playback - periodically re-add memories to keep the queue filled
       // This mirrors how the main app's geofencing continuously adds nearby memories
       previewIntervalRef.current = setInterval(async () => {
-        console.log('🔮 Continuous preview: re-adding memories to queue...');
+        console.log('🔮 Continuous preview: re-checking memories...');
         try {
-          // Re-fetch memories (in case of changes) and re-add to queue
-          const freshMemories = await getMemoriesInRadius(lat, lng, PREVIEW_RADIUS);
-          const freshWithAudio = freshMemories.filter(m => m.audio_url);
+          // Re-fetch and apply same strict radius filtering
+          const freshInBoundingBox = await getMemoriesInRadius(lat, lng, PREVIEW_RADIUS);
+          const freshInRadius = filterMemoriesByRadius(freshInBoundingBox, lat, lng);
+          const freshWithAudio = freshInRadius.filter(m => m.audio_url);
           
           if (freshWithAudio.length > 0) {
+            console.log(`🔮 Re-adding ${freshWithAudio.length} memories to queue`);
             await addPreviewMemoriesToQueue(lat, lng, freshWithAudio);
           }
         } catch (err) {
@@ -724,7 +763,7 @@ export function MapScreen({ userId, showOverlay = true, filterUserId, showAllMem
     } finally {
       setIsPreviewLoading(false);
     }
-  }, [isPreviewMode, userId, stopPreviewPlayback, addPreviewMemoriesToQueue]);
+  }, [isPreviewMode, userId, stopPreviewPlayback, addPreviewMemoriesToQueue, filterMemoriesByRadius]);
 
   // Handle map click for preview mode
   useEffect(() => {
@@ -814,6 +853,16 @@ export function MapScreen({ userId, showOverlay = true, filterUserId, showAllMem
         <div className="absolute top-4 left-4 right-4 z-20">
           {/* Main Search Bar */}
           <div className="flex gap-2">
+            {/* Home Button - Exit to main Time Machine page */}
+            <Button
+              onClick={() => navigate('/')}
+              variant="outline"
+              size="icon"
+              className="bg-black/90 border-white text-white hover:bg-white hover:text-black"
+              title="Back to Time Machine"
+            >
+              <Home className="h-4 w-4" />
+            </Button>
             <div className="relative flex-1">
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
               <Input
