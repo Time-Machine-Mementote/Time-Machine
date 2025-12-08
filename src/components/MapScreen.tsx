@@ -91,22 +91,35 @@ export function MapScreen({ userId, showOverlay = true, filterUserId, showAllMem
     return R * c;
   }, []);
 
-  // Filter memories to only those where the preview point is within each memory's radius
-  // This matches the main app's behavior in useGeofencing
+  // Filter memories to only those where:
+  // 1. The preview point is within each memory's radius_m (memory can be triggered)
+  // 2. The memory is within PREVIEW_RADIUS (100m) of the preview point (spatial constraint)
+  // This ensures strict radius enforcement for preview mode
   const filterMemoriesByRadius = useCallback((memories: Memory[], previewLat: number, previewLng: number): Memory[] => {
     return memories.filter(memory => {
       const distance = calculateDistance(previewLat, previewLng, memory.lat, memory.lng);
-      const isWithinRadius = distance <= memory.radius_m;
       
-      if (!isWithinRadius) {
-        console.log(`🔮 Memory ${memory.id} filtered out: distance ${distance.toFixed(1)}m > radius ${memory.radius_m}m`);
+      // Check 1: Preview point must be within memory's radius (memory can be triggered)
+      const isWithinMemoryRadius = distance <= memory.radius_m;
+      
+      // Check 2: Memory must be within PREVIEW_RADIUS (100m) of preview point (spatial constraint)
+      const isWithinPreviewRadius = distance <= PREVIEW_RADIUS;
+      
+      const shouldInclude = isWithinMemoryRadius && isWithinPreviewRadius;
+      
+      if (!shouldInclude) {
+        if (!isWithinMemoryRadius) {
+          console.log(`🔮 Memory ${memory.id} filtered out: preview point distance ${distance.toFixed(1)}m > memory radius ${memory.radius_m}m`);
+        } else if (!isWithinPreviewRadius) {
+          console.log(`🔮 Memory ${memory.id} filtered out: distance ${distance.toFixed(1)}m > PREVIEW_RADIUS ${PREVIEW_RADIUS}m`);
+        }
       }
       
-      return isWithinRadius;
+      return shouldInclude;
     });
   }, [calculateDistance]);
 
-  // Geofencing hook (disabled for now)
+  // Geofencing hook - disabled during preview mode to prevent interference
   const {
     location,
     accuracy,
@@ -119,7 +132,7 @@ export function MapScreen({ userId, showOverlay = true, filterUserId, showAllMem
     skip,
     clearQueue,
   } = useGeofencing({
-    enabled: true, // Re-enabled location tracking
+    enabled: !isPreviewMode, // Disable geofencing when in preview mode
     userId,
   });
 
@@ -630,16 +643,36 @@ export function MapScreen({ userId, showOverlay = true, filterUserId, showAllMem
       timestamp: Date.now(),
     };
 
+    // Double-check radius filtering before adding to queue (safety check)
+    const memoriesInRadius = filterMemoriesByRadius(memoriesWithAudio, lat, lng);
+    
+    console.log(`🔮 Adding ${memoriesInRadius.length} memories to queue (filtered from ${memoriesWithAudio.length})`);
+
     // Add each memory with audio to the queue
     // The audio queue has its own cooldown system to prevent duplicates
-    for (const memory of memoriesWithAudio) {
+    for (const memory of memoriesInRadius) {
+      // Final safety check: verify both constraints
+      const distance = calculateDistance(lat, lng, memory.lat, memory.lng);
+      
+      // Check 1: Preview point must be within memory's radius
+      if (distance > memory.radius_m) {
+        console.warn(`🔮 Skipping memory ${memory.id}: distance ${distance.toFixed(1)}m > memory radius ${memory.radius_m}m`);
+        continue;
+      }
+      
+      // Check 2: Memory must be within PREVIEW_RADIUS (100m) of preview point
+      if (distance > PREVIEW_RADIUS) {
+        console.warn(`🔮 Skipping memory ${memory.id}: distance ${distance.toFixed(1)}m > PREVIEW_RADIUS ${PREVIEW_RADIUS}m`);
+        continue;
+      }
+      
       const isOwner = userId ? memory.author_id === userId : false;
       const isFriend = false; // Preview doesn't need friend logic
       
       // audioQueue.addMemory handles cooldown internally
       audioQueue.addMemory(memory, previewUserLocation, isOwner, isFriend);
     }
-  }, [userId]);
+  }, [userId, filterMemoriesByRadius, calculateDistance]);
 
   // Preview at Point - trigger CONTINUOUS audio playback for any clicked location (dev portal feature)
   // This does NOT store any data in the database - it's purely for previewing what would play
