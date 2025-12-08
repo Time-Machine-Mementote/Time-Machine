@@ -8,11 +8,13 @@ import { DevPortal } from '@/components/DevPortal';
 import { SecretCodeWindow } from '@/components/SecretCodeWindow';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { X, Search, Filter, ChevronDown, ChevronUp, Play, Pause } from 'lucide-react';
+import { X, Search, Filter, ChevronDown, ChevronUp, Play, Pause, MapPinned, Ghost, Loader2, Volume2 } from 'lucide-react';
 import { BERKELEY_CAMPUS_CENTER, BERKELEY_CAMPUS_ZOOM } from '@/types/memory';
-import type { Memory } from '@/types/memory';
+import type { Memory, UserLocation } from '@/types/memory';
 import { supabase } from '@/integrations/supabase/client';
 import { audioQueue } from '@/utils/audioQueue';
+import { getMemoriesInRadius } from '@/services/memoryApi';
+import { toast } from 'sonner';
 
 // Set Mapbox access token
 const MAPBOX_TOKEN = import.meta.env.VITE_MAPBOX_TOKEN;
@@ -61,6 +63,13 @@ export function MapScreen({ userId, showOverlay = true, filterUserId, showAllMem
   const [isPlaying, setIsPlaying] = useState(false);
   const [audioDuration, setAudioDuration] = useState(0);
   const [audioCurrentTime, setAudioCurrentTime] = useState(0);
+
+  // Preview at Point state
+  const [isPreviewMode, setIsPreviewMode] = useState(false);
+  const [previewLocation, setPreviewLocation] = useState<{ lat: number; lng: number } | null>(null);
+  const [isPreviewLoading, setIsPreviewLoading] = useState(false);
+  const [previewMemories, setPreviewMemories] = useState<Memory[]>([]);
+  const previewMarkerRef = useRef<mapboxgl.Marker | null>(null);
 
   // Geofencing hook (disabled for now)
   const {
@@ -542,6 +551,190 @@ export function MapScreen({ userId, showOverlay = true, filterUserId, showAllMem
     }
   }, [isMuted, unmute, mute, location]);
 
+  // Preview at Point - trigger audio playback for any clicked location (dev portal feature)
+  // This does NOT store any data in the database - it's purely for previewing what would play
+  const handlePreviewAtPoint = useCallback(async (lat: number, lng: number) => {
+    if (!isPreviewMode) return;
+    
+    console.log('🔮 Preview at Point triggered:', { lat, lng });
+    setPreviewLocation({ lat, lng });
+    setIsPreviewLoading(true);
+    setPreviewMemories([]);
+
+    // Remove existing preview marker
+    if (previewMarkerRef.current) {
+      previewMarkerRef.current.remove();
+      previewMarkerRef.current = null;
+    }
+
+    // Create a new preview marker with distinct styling (ghost/cyan color)
+    if (map.current) {
+      const el = document.createElement('div');
+      el.className = 'preview-marker';
+      el.style.cssText = `
+        width: 30px;
+        height: 30px;
+        border-radius: 50%;
+        background-color: rgba(6, 182, 212, 0.7);
+        border: 3px dashed white;
+        box-shadow: 0 0 15px rgba(6, 182, 212, 0.8), 0 4px 8px rgba(0,0,0,0.4);
+        cursor: pointer;
+        pointer-events: none;
+        animation: pulse 2s infinite;
+      `;
+      
+      // Add pulse animation style if not already added
+      if (!document.getElementById('preview-marker-style')) {
+        const style = document.createElement('style');
+        style.id = 'preview-marker-style';
+        style.textContent = `
+          @keyframes pulse {
+            0% { transform: scale(1); opacity: 0.7; }
+            50% { transform: scale(1.2); opacity: 1; }
+            100% { transform: scale(1); opacity: 0.7; }
+          }
+        `;
+        document.head.appendChild(style);
+      }
+
+      previewMarkerRef.current = new mapboxgl.Marker({
+        element: el,
+        anchor: 'center',
+      })
+        .setLngLat([lng, lat])
+        .addTo(map.current);
+    }
+
+    try {
+      // Fetch memories in radius for this location (default radius ~100m, but we'll use a larger radius to find more)
+      const PREVIEW_RADIUS = 200; // 200 meters
+      const memories = await getMemoriesInRadius(lat, lng, PREVIEW_RADIUS);
+      
+      console.log(`🔮 Found ${memories.length} memories near preview point`);
+      setPreviewMemories(memories);
+
+      if (memories.length === 0) {
+        toast.info('No memories found at this location', {
+          description: `No audio memories within ${PREVIEW_RADIUS}m of this point.`,
+          duration: 4000,
+        });
+        setIsPreviewLoading(false);
+        return;
+      }
+
+      // Filter to only memories with audio
+      const memoriesWithAudio = memories.filter(m => m.audio_url);
+      
+      if (memoriesWithAudio.length === 0) {
+        toast.info('No audio memories at this location', {
+          description: `Found ${memories.length} memories but none have audio recordings.`,
+          duration: 4000,
+        });
+        setIsPreviewLoading(false);
+        return;
+      }
+
+      // Unlock audio first (required for mobile)
+      await audioQueue.unlockAudio();
+
+      // Clear the existing queue and add preview memories
+      audioQueue.clear();
+      
+      // Create a simulated user location for the preview
+      const previewUserLocation: UserLocation = {
+        lat,
+        lng,
+        accuracy: 10,
+        timestamp: Date.now(),
+      };
+
+      // Add each memory with audio to the queue
+      for (const memory of memoriesWithAudio) {
+        // Calculate a simulated distance (we're pretending to be at this location)
+        const isOwner = userId ? memory.author_id === userId : false;
+        const isFriend = false; // Preview doesn't need friend logic
+        
+        console.log('🔮 Adding preview memory to queue:', memory.id, memory.summary || memory.text?.substring(0, 50));
+        audioQueue.addMemory(memory, previewUserLocation, isOwner, isFriend);
+      }
+
+      // Unmute to start playing
+      audioQueue.unmute();
+      
+      toast.success(`Playing ${memoriesWithAudio.length} memory audio${memoriesWithAudio.length > 1 ? 's' : ''}`, {
+        description: `Preview at ${lat.toFixed(4)}, ${lng.toFixed(4)}`,
+        duration: 3000,
+      });
+
+    } catch (error) {
+      console.error('🔮 Preview at Point error:', error);
+      toast.error('Failed to load preview', {
+        description: error instanceof Error ? error.message : 'Unknown error',
+        duration: 4000,
+      });
+    } finally {
+      setIsPreviewLoading(false);
+    }
+  }, [isPreviewMode, userId]);
+
+  // Handle map click for preview mode
+  useEffect(() => {
+    if (!map.current || !isMapLoaded || showOverlay) return;
+
+    const handleMapClick = (e: mapboxgl.MapMouseEvent) => {
+      if (!isPreviewMode) return;
+      
+      // Check if click is on a marker (don't trigger preview for marker clicks)
+      const target = e.originalEvent.target as HTMLElement;
+      if (target.closest('.memory-marker') || target.closest('.preview-marker')) {
+        return;
+      }
+
+      const { lat, lng } = e.lngLat;
+      handlePreviewAtPoint(lat, lng);
+    };
+
+    map.current.on('click', handleMapClick);
+
+    return () => {
+      if (map.current) {
+        map.current.off('click', handleMapClick);
+      }
+    };
+  }, [isMapLoaded, showOverlay, isPreviewMode, handlePreviewAtPoint]);
+
+  // Cleanup preview marker when preview mode is disabled
+  useEffect(() => {
+    if (!isPreviewMode) {
+      if (previewMarkerRef.current) {
+        previewMarkerRef.current.remove();
+        previewMarkerRef.current = null;
+      }
+      setPreviewLocation(null);
+      setPreviewMemories([]);
+    }
+  }, [isPreviewMode]);
+
+  // Toggle preview mode
+  const togglePreviewMode = useCallback(() => {
+    setIsPreviewMode(prev => {
+      const newMode = !prev;
+      if (newMode) {
+        toast.info('Preview Mode Enabled', {
+          description: 'Click anywhere on the map to hear memories at that location. No data will be saved.',
+          duration: 5000,
+        });
+      } else {
+        // Stop any playing audio when disabling preview mode
+        audioQueue.mute();
+        toast.info('Preview Mode Disabled', {
+          duration: 2000,
+        });
+      }
+      return newMode;
+    });
+  }, []);
+
   return (
     <div className="relative w-full h-full overflow-hidden" style={{ height: '100%', width: '100%', minHeight: 0 }}>
       {/* Map Container - Visible or hidden based on showOverlay */}
@@ -712,6 +905,50 @@ export function MapScreen({ userId, showOverlay = true, filterUserId, showAllMem
                   </div>
                 </div>
               )}
+
+              {/* Preview at Point Section */}
+              <div className="mt-4 pt-3 border-t border-gray-700">
+                <div className="flex items-center gap-2 mb-2">
+                  <Ghost className="h-4 w-4 text-cyan-400" />
+                  <span className="font-terminal text-white text-sm">&gt; PREVIEW_AT_POINT:</span>
+                </div>
+                <p className="font-terminal text-gray-400 text-xs mb-3">
+                  Click anywhere on the map to hear the audio mashup that would play if you were physically at that location. No data will be saved.
+                </p>
+                <Button
+                  onClick={togglePreviewMode}
+                  variant="outline"
+                  size="sm"
+                  className={`w-full font-terminal ${
+                    isPreviewMode 
+                      ? 'bg-cyan-500 text-black border-cyan-500 hover:bg-cyan-400' 
+                      : 'bg-black text-cyan-400 border-cyan-400 hover:bg-cyan-400 hover:text-black'
+                  }`}
+                >
+                  <Ghost className="h-4 w-4 mr-2" />
+                  {isPreviewMode ? 'Preview Mode: ON' : 'Enable Preview Mode'}
+                </Button>
+                {isPreviewMode && previewLocation && (
+                  <div className="mt-2 font-terminal text-cyan-400 text-xs">
+                    <div className="flex items-center gap-1">
+                      <MapPinned className="h-3 w-3" />
+                      Preview at: {previewLocation.lat.toFixed(4)}, {previewLocation.lng.toFixed(4)}
+                    </div>
+                    {isPreviewLoading && (
+                      <div className="flex items-center gap-1 mt-1 text-yellow-400">
+                        <Loader2 className="h-3 w-3 animate-spin" />
+                        Loading audio preview...
+                      </div>
+                    )}
+                    {!isPreviewLoading && previewMemories.length > 0 && (
+                      <div className="flex items-center gap-1 mt-1 text-green-400">
+                        <Volume2 className="h-3 w-3" />
+                        Found {previewMemories.length} memories ({previewMemories.filter(m => m.audio_url).length} with audio)
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
             </div>
           )}
 
@@ -719,6 +956,32 @@ export function MapScreen({ userId, showOverlay = true, filterUserId, showAllMem
           {searchQuery && !showFilters && (
             <div className="mt-2 px-3 py-1 bg-black/80 rounded font-terminal text-gray-300 text-xs">
               Found {filteredMemories.length} memories matching "{searchQuery}"
+            </div>
+          )}
+
+          {/* Preview Mode Floating Indicator (when filter panel is closed) */}
+          {isPreviewMode && !showFilters && (
+            <div className="mt-2 flex items-center gap-2">
+              <div className="flex-1 px-3 py-2 bg-cyan-500/90 rounded font-terminal text-black text-xs flex items-center gap-2">
+                <Ghost className="h-4 w-4 animate-pulse" />
+                <span className="flex-1">Preview Mode Active - Click map to hear audio</span>
+                <Button
+                  onClick={togglePreviewMode}
+                  variant="ghost"
+                  size="sm"
+                  className="h-6 px-2 text-black hover:bg-cyan-600 font-terminal text-xs"
+                >
+                  <X className="h-3 w-3" />
+                </Button>
+              </div>
+            </div>
+          )}
+
+          {/* Preview Loading/Status Indicator */}
+          {isPreviewMode && isPreviewLoading && !showFilters && (
+            <div className="mt-2 px-3 py-2 bg-black/90 border border-cyan-400 rounded font-terminal text-cyan-400 text-xs flex items-center gap-2">
+              <Loader2 className="h-4 w-4 animate-spin" />
+              Loading preview audio at {previewLocation?.lat.toFixed(4)}, {previewLocation?.lng.toFixed(4)}...
             </div>
           )}
         </div>
