@@ -6,6 +6,8 @@ import { AuthGuard } from "./components/AuthGuard";
 import { MapScreen } from "./components/MapScreen";
 import NotFound from "./pages/NotFound";
 import { InputOnlyPage } from "./pages/InputOnlyPage";
+import { InputPage } from "./pages/InputPage";
+import { ExhibitionPage } from "./pages/ExhibitionPage";
 import { DevPortalPage } from "./pages/DevPortalPage";
 import { AuthProvider, useAuth } from "@/contexts/AuthContext";
 import { INPUT_ONLY_MODE } from "@/config/featureFlags";
@@ -56,7 +58,8 @@ function AppInner() {
 function InputOnlyRoutes() {
   return (
     <Routes>
-      <Route path="/" element={<InputOnlyPage />} />
+      <Route path="/" element={<InputPage mode="normal" />} />
+      <Route path="/exhibition" element={<ExhibitionPage />} />
       <Route path="/dev" element={<DevPortalPage />} />
       {/* Keep old routes available but commented out - can re-enable later */}
       {/* <Route path="/map" element={<MapScreen userId={undefined} showOverlay={true} />} /> */}
