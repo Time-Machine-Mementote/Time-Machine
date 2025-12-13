@@ -1,9 +1,9 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { usePhoneLead } from '@/hooks/usePhoneLead';
-import { Loader2 } from 'lucide-react';
+import { Loader2, X } from 'lucide-react';
 
 interface PhoneModalProps {
   isOpen: boolean;
@@ -14,11 +14,21 @@ export function PhoneModal({ isOpen, onClose }: PhoneModalProps) {
   const [phoneInput, setPhoneInput] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
   const { submitPhone } = usePhoneLead();
+  const inputRef = useRef<HTMLInputElement>(null);
 
-  // Reset input when modal opens
+  // Reset input and auto-focus when modal opens
   useEffect(() => {
     if (isOpen) {
       setPhoneInput('');
+      // Auto-focus input to open mobile keyboard
+      // Use requestAnimationFrame + setTimeout for iOS/Safari compatibility
+      requestAnimationFrame(() => {
+        inputRef.current?.focus();
+        // Fallback timeout for iOS
+        setTimeout(() => {
+          inputRef.current?.focus();
+        }, 50);
+      });
     }
   }, [isOpen]);
 
@@ -76,8 +86,29 @@ export function PhoneModal({ isOpen, onClose }: PhoneModalProps) {
           boxShadow: 'none'
         }}
       >
-        <DialogHeader>
-          <DialogTitle className="text-lg font-normal text-white">
+        <DialogHeader className="relative">
+          <Button
+            onClick={onClose}
+            variant="ghost"
+            size="icon"
+            className="absolute top-0 right-0 text-white hover:bg-white hover:text-black border border-white rounded-none"
+            style={{
+              backgroundColor: '#000000',
+              color: '#FFFFFF',
+              borderColor: '#FFFFFF'
+            }}
+            onMouseEnter={(e) => {
+              e.currentTarget.style.backgroundColor = '#FFFFFF';
+              e.currentTarget.style.color = '#000000';
+            }}
+            onMouseLeave={(e) => {
+              e.currentTarget.style.backgroundColor = '#000000';
+              e.currentTarget.style.color = '#FFFFFF';
+            }}
+          >
+            <X className="h-4 w-4" />
+          </Button>
+          <DialogTitle className="text-lg font-normal text-white pr-8">
             Yaaaayou! Use this app anywhere you want to save a sound.{' '}
             If you give us your number we can take you back in time and also invite you to our parties—we are moving to a warehouse in San Francisco in August 2026.{' '}
             Ask G if you have any questions.{' '}
@@ -86,7 +117,11 @@ export function PhoneModal({ isOpen, onClose }: PhoneModalProps) {
         </DialogHeader>
         <form onSubmit={handleSubmit} className="space-y-4 mt-4">
           <Input
+            ref={inputRef}
             type="tel"
+            inputMode="tel"
+            autoComplete="tel"
+            enterKeyHint="done"
             placeholder="Phone number"
             value={phoneInput}
             onChange={(e) => setPhoneInput(e.target.value)}

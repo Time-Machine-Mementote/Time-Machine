@@ -31,27 +31,54 @@ export function useRecorder({ onRecordingComplete }: UseRecorderOptions): UseRec
         throw new Error('Your browser does not support audio recording. Please use a modern browser like Chrome, Firefox, or Edge.');
       }
 
-      // Request microphone access
+      // Request microphone access with improved audio constraints
       const stream = await navigator.mediaDevices.getUserMedia({ 
         audio: { 
+          channelCount: 1,
           echoCancellation: true,
           noiseSuppression: true,
+          autoGainControl: false,
           sampleRate: 44100 
         } 
       });
       
       streamRef.current = stream;
       
-      // Check for supported mime types
-      let mimeType = 'audio/webm;codecs=opus';
-      if (!MediaRecorder.isTypeSupported(mimeType)) {
-        mimeType = 'audio/webm';
-        if (!MediaRecorder.isTypeSupported(mimeType)) {
-          mimeType = ''; // Let browser choose
-        }
+      // Check for supported mime types (prefer Opus for better quality)
+      const preferredTypes = [
+        'audio/webm;codecs=opus',
+        'audio/webm',
+        'audio/mp4',
+      ];
+      
+      const mimeType = preferredTypes.find(t => MediaRecorder.isTypeSupported(t)) || '';
+      
+      // Log selected mimeType for debugging (dev only)
+      if (import.meta.env.DEV) {
+        console.log('[recorder] Selected mimeType:', mimeType || 'browser default');
       }
       
-      const mediaRecorder = new MediaRecorder(stream, mimeType ? { mimeType } : undefined);
+      // Create MediaRecorder with higher bitrate for better quality
+      let mediaRecorder: MediaRecorder;
+      try {
+        const options: MediaRecorderOptions = {
+          audioBitsPerSecond: 192000, // Higher bitrate for better quality
+        };
+        
+        if (mimeType) {
+          options.mimeType = mimeType;
+        }
+        
+        mediaRecorder = new MediaRecorder(stream, options);
+        
+        if (import.meta.env.DEV) {
+          console.log('[recorder] Audio bitrate:', options.audioBitsPerSecond);
+        }
+      } catch (error) {
+        // Fallback to default constructor if options fail
+        console.warn('[recorder] Failed to create with options, using default:', error);
+        mediaRecorder = new MediaRecorder(stream);
+      }
       mediaRecorderRef.current = mediaRecorder;
       chunksRef.current = [];
 
@@ -62,7 +89,9 @@ export function useRecorder({ onRecordingComplete }: UseRecorderOptions): UseRec
       };
 
       mediaRecorder.onstop = () => {
-        const audioBlob = new Blob(chunksRef.current, { type: 'audio/webm' });
+        // Use the actual mimeType from the recorder for the blob
+        const blobType = mediaRecorder.mimeType || 'audio/webm';
+        const audioBlob = new Blob(chunksRef.current, { type: blobType });
         onRecordingComplete(audioBlob);
         
         // Clean up stream
