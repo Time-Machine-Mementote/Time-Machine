@@ -1,0 +1,393 @@
+import { useState, useEffect, useRef } from 'react';
+import { Button } from '@/components/ui/button';
+import { PhoneModal } from '@/components/PhoneModal';
+import { DevPortal } from '@/components/DevPortal';
+import { DevPortalCodeWindow } from '@/components/DevPortalCodeWindow';
+import { AuthModal } from '@/components/AuthModal';
+import { useRecorder } from '@/hooks/useRecorder';
+import { usePhoneLead } from '@/hooks/usePhoneLead';
+import { useAuth } from '@/contexts/AuthContext';
+import { supabase } from '@/integrations/supabase/client';
+import { uploadAudioToStorage } from '@/utils/audioStorage';
+import { isDevUnlocked } from '@/utils/devPortalUnlock';
+import { toast } from 'sonner';
+import { Loader2 } from 'lucide-react';
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '@/components/ui/dialog';
+
+export function InputOnlyPage() {
+  const [showPhoneModal, setShowPhoneModal] = useState(false);
+  const [showDevPortal, setShowDevPortal] = useState(false);
+  const [showDevPortalCode, setShowDevPortalCode] = useState(false);
+  const [showComingSoonModal, setShowComingSoonModal] = useState(false);
+  const [isProcessing, setIsProcessing] = useState(false);
+  const [pendingRecording, setPendingRecording] = useState<Blob | null>(null);
+  const [location, setLocation] = useState<{ lat: number; lng: number } | null>(null);
+  const [locationError, setLocationError] = useState<string | null>(null);
+  const [recordingError, setRecordingError] = useState<string | null>(null);
+  
+  const { phone, isCollected, isLoading: phoneLoading } = usePhoneLead();
+  const { user, openAuthModal, isAuthModalOpen, closeAuthModal } = useAuth();
+  const recordingCountRef = useRef(0);
+
+  // Request geolocation on mount
+  useEffect(() => {
+    if (navigator.geolocation) {
+      navigator.geolocation.getCurrentPosition(
+        (position) => {
+          setLocation({
+            lat: position.coords.latitude,
+            lng: position.coords.longitude,
+          });
+        },
+        (error) => {
+          console.warn('Geolocation error:', error);
+          setLocationError('Location access denied');
+          // Continue without location - will save nulls
+        },
+        {
+          enableHighAccuracy: true,
+          timeout: 10000,
+          maximumAge: 0,
+        }
+      );
+    } else {
+      setLocationError('Geolocation not supported');
+    }
+  }, []);
+
+  // Secret points detection - double click on page (not on buttons)
+  useEffect(() => {
+    let clickCount = 0;
+    let clickTimer: NodeJS.Timeout;
+
+    const handleClick = (e: MouseEvent) => {
+      // Only trigger on page area (not on buttons or inputs)
+      const target = e.target as HTMLElement;
+      if (target.closest('button') || target.closest('input') || target.closest('form')) return;
+
+      clickCount++;
+      
+      if (clickCount === 1) {
+        clickTimer = setTimeout(() => {
+          clickCount = 0;
+        }, 500); // 500ms window for double click
+      } else if (clickCount === 2) {
+        clearTimeout(clickTimer);
+        setShowDevPortalCode(true);
+        clickCount = 0;
+      }
+    };
+
+    window.addEventListener('click', handleClick);
+    return () => {
+      window.removeEventListener('click', handleClick);
+      if (clickTimer) clearTimeout(clickTimer);
+    };
+  }, []);
+
+  // Keyboard shortcut for Dev Portal (press 'D' key) - desktop only
+  // Only works if already unlocked
+  useEffect(() => {
+    const handleKeyPress = (e: KeyboardEvent) => {
+      // Press 'D' or 'd' to open Dev Portal (when not typing in an input)
+      if ((e.key === 'D' || e.key === 'd') && e.target === document.body) {
+        e.preventDefault();
+        // Check if unlocked - if not, show code window
+        if (isDevUnlocked()) {
+          setShowDevPortal(true);
+        } else {
+          setShowDevPortalCode(true);
+        }
+      }
+      // Press Escape to close Dev Portal
+      if (e.key === 'Escape' && (showDevPortal || showDevPortalCode)) {
+        setShowDevPortal(false);
+        setShowDevPortalCode(false);
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyPress);
+    return () => window.removeEventListener('keydown', handleKeyPress);
+  }, [showDevPortal, showDevPortalCode]);
+
+  // Triple tap gesture for mobile Dev Portal access
+  const tapCountRef = useRef(0);
+  const tapTimerRef = useRef<NodeJS.Timeout | null>(null);
+
+  const handleTripleTap = () => {
+    tapCountRef.current += 1;
+    
+    // Clear existing timer
+    if (tapTimerRef.current) {
+      clearTimeout(tapTimerRef.current);
+    }
+
+    // If 3 taps within 500ms, check unlock status
+    if (tapCountRef.current >= 3) {
+      if (isDevUnlocked()) {
+        setShowDevPortal(true);
+      } else {
+        setShowDevPortalCode(true);
+      }
+      tapCountRef.current = 0;
+    } else {
+      // Reset counter after 500ms
+      tapTimerRef.current = setTimeout(() => {
+        tapCountRef.current = 0;
+      }, 500);
+    }
+  };
+
+  const handleRecordingComplete = async (audioBlob: Blob) => {
+    recordingCountRef.current += 1;
+    const isFirstRecording = recordingCountRef.current === 1;
+
+    // If this is the first completed recording and phone not collected, show modal
+    if (isFirstRecording && !isCollected && !phoneLoading) {
+      setPendingRecording(audioBlob);
+      setShowPhoneModal(true);
+      return; // Don't upload yet, wait for phone submission
+    }
+
+    // Upload the recording
+    await uploadRecording(audioBlob);
+  };
+
+  const uploadRecording = async (audioBlob: Blob) => {
+    setIsProcessing(true);
+    setRecordingError(null); // Clear any previous errors
+
+    try {
+      // Get current phone from hook (will be updated after phone submission)
+      const currentPhone = phone || localStorage.getItem('tm_phone_number');
+      
+      // Generate temp ID for upload
+      const tempMemoryId = crypto.randomUUID();
+      
+      // Upload audio to storage (anonymous)
+      const audioUrl = await uploadAudioToStorage(
+        audioBlob,
+        tempMemoryId,
+        null,
+        true // isAnonymous
+      );
+
+      if (!audioUrl) {
+        console.error('Failed to upload audio to storage');
+        setRecordingError('The recording could not be saved. Please try again.');
+        setIsProcessing(false);
+        return;
+      }
+
+      // Insert memory record
+      const { error } = await supabase
+        .from('memories')
+        .insert({
+          text: '[Voice recording]',
+          lat: location?.lat ?? null,
+          lng: location?.lng ?? null,
+          place_name: location 
+            ? `Memory at ${location.lat.toFixed(4)}, ${location.lng.toFixed(4)}`
+            : 'Unknown location',
+          privacy: 'public',
+          summary: 'Voice recording',
+          radius_m: 30,
+          author_id: null, // Anonymous
+          extracted_people: [],
+          audio_url: audioUrl,
+          phone: currentPhone,
+        });
+
+      if (error) {
+        console.error('Error saving memory to database:', error);
+        setRecordingError('The recording could not be saved. Please try again.');
+        setIsProcessing(false);
+        return;
+      }
+
+      // Success - no UI feedback, just return to idle state
+    } catch (error) {
+      console.error('Error uploading recording:', error);
+      setRecordingError('The recording could not be saved. Please try again.');
+    } finally {
+      setIsProcessing(false);
+    }
+  };
+
+  // Handle phone modal close - upload pending recording if exists
+  const handlePhoneModalClose = async () => {
+    setShowPhoneModal(false);
+    
+    // Small delay to ensure phone is updated in localStorage and hook state
+    await new Promise(resolve => setTimeout(resolve, 300));
+    
+    // If we have a pending recording, upload it now (phone should be collected)
+    if (pendingRecording) {
+      await uploadRecording(pendingRecording);
+      setPendingRecording(null);
+    }
+  };
+
+  const { isRecording, startRecording, stopRecording, error: recorderError } = useRecorder({
+    onRecordingComplete: handleRecordingComplete,
+  });
+
+  return (
+    <div className="min-h-screen bg-black flex flex-col items-center justify-center p-6 relative">
+      {/* Login Header */}
+      <div className="absolute top-0 left-0 right-0 p-4 flex justify-between items-center z-10">
+        <div className="font-mono text-white text-sm">Time Machine</div>
+        <div className="flex gap-2">
+          {user ? (
+            <span className="font-mono text-white text-sm">{user.email}</span>
+          ) : (
+            <Button
+              onClick={openAuthModal}
+              variant="outline"
+              size="sm"
+              className="font-mono bg-black text-white border-white hover:bg-white hover:text-black"
+            >
+              Log in
+            </Button>
+          )}
+        </div>
+      </div>
+
+      {/* Triple tap area for mobile - invisible overlay on terminal text */}
+      <div 
+        className="absolute top-0 left-0 w-full h-32 cursor-pointer"
+        onClick={handleTripleTap}
+        aria-label="Triple tap to open Dev Portal"
+      />
+
+      {/* Terminal-style description */}
+      <div className="w-full max-w-2xl mb-8">
+        <div className="font-mono text-sm text-gray-400 leading-relaxed p-4 bg-gray-900 border border-gray-800 rounded">
+          This is a (fucking) Time Machine. We believe this could change the world, and we need your help. Record now, and come back to your current location in the future to interact with the sound of the past. Thank you for your time.
+        </div>
+      </div>
+
+      {/* Record and Output Buttons */}
+      <div className="flex flex-col items-center space-y-4">
+        {isProcessing ? (
+          <div className="flex flex-col items-center space-y-4">
+            <Loader2 className="h-8 w-8 animate-spin text-white" />
+            <p className="text-sm text-gray-400 font-mono">Saving recording...</p>
+          </div>
+        ) : (
+          <div className="flex flex-col sm:flex-row gap-4 items-center">
+            {/* Record Button */}
+            <Button
+              onClick={isRecording ? stopRecording : startRecording}
+              size="lg"
+              className={`text-2xl px-12 py-8 font-mono rounded-none border-2 ${
+                isRecording
+                  ? 'bg-red-600 text-white border-red-700 hover:bg-red-700'
+                  : 'bg-white text-black border-white hover:bg-gray-100'
+              }`}
+              disabled={isProcessing}
+            >
+              {isRecording ? 'Stop' : 'Record'}
+            </Button>
+
+            {/* Output Button (Coming Soon) */}
+            <div className="flex flex-col items-center">
+              <Button
+                onClick={() => setShowComingSoonModal(true)}
+                size="lg"
+                className="text-2xl px-12 py-8 font-mono rounded-none border-2 border-dashed opacity-60 bg-black text-white border-white hover:opacity-80 hover:bg-black hover:text-white"
+                disabled={isProcessing}
+              >
+                OUTPUT
+              </Button>
+              <p className="text-xs text-gray-400 font-mono mt-1 uppercase">Coming Soon</p>
+            </div>
+          </div>
+        )}
+
+        {/* Status line */}
+        {isRecording && (
+          <p className="text-sm text-gray-400 font-mono">Recording...</p>
+        )}
+
+        {/* Recorder error (mic access, blob creation) */}
+        {recorderError && (
+          <p className="text-sm text-red-400 font-mono max-w-md text-center">{recorderError}</p>
+        )}
+      </div>
+
+      {/* Phone Modal */}
+      <PhoneModal isOpen={showPhoneModal} onClose={handlePhoneModalClose} />
+
+      {/* Coming Soon Modal */}
+      <Dialog open={showComingSoonModal} onOpenChange={setShowComingSoonModal}>
+        <DialogContent className="bg-black border-2 border-white text-white sm:max-w-md [&>button]:hidden">
+          <DialogHeader>
+            <DialogTitle className="font-mono text-white text-xl">
+              Output is coming soon.
+            </DialogTitle>
+            <DialogDescription className="font-mono text-white text-sm mt-2">
+              This is where you'll return to hear the past.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="mt-6 flex justify-end">
+            <Button
+              onClick={() => setShowComingSoonModal(false)}
+              className="bg-white text-black border-2 border-white hover:bg-gray-200 font-mono rounded-none"
+            >
+              OK
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Recording Error Modal */}
+      <Dialog open={!!recordingError} onOpenChange={(open) => !open && setRecordingError(null)}>
+        <DialogContent className="bg-black border-2 border-white text-white sm:max-w-md [&>button]:hidden">
+          <DialogHeader>
+            <DialogTitle className="font-mono text-white text-lg">
+              Something went wrong.
+            </DialogTitle>
+            <DialogDescription className="font-mono text-white text-sm mt-2">
+              The recording could not be saved.
+              <br />
+              Please try again.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="mt-6 flex justify-end">
+            <Button
+              onClick={() => setRecordingError(null)}
+              className="bg-white text-black border-2 border-white hover:bg-gray-200 font-mono rounded-none"
+            >
+              OK
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Auth Modal */}
+      <AuthModal 
+        isOpen={isAuthModalOpen} 
+        onClose={closeAuthModal}
+        onSuccess={() => {
+          toast.success('Logged in successfully');
+        }}
+      />
+
+      {/* Dev Portal Code Window - appears after secret points */}
+      <DevPortalCodeWindow
+        isOpen={showDevPortalCode}
+        onClose={() => setShowDevPortalCode(false)}
+      />
+
+      {/* Dev Portal - Only accessible if unlocked */}
+      <DevPortal
+        isOpen={showDevPortal}
+        onClose={() => setShowDevPortal(false)}
+        userLocation={location ? { lat: location.lat, lng: location.lng } : null}
+        userId={user?.id}
+      />
+    </div>
+  );
+}
+

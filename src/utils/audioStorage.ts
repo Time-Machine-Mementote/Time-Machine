@@ -5,18 +5,25 @@ import { toast } from 'sonner';
  * Uploads an audio blob to Supabase storage
  * @param audioBlob - The audio blob to upload
  * @param memoryId - The memory ID to associate with this audio
- * @param userId - The user ID uploading the audio
+ * @param userId - The user ID uploading the audio (optional for anonymous uploads)
+ * @param isAnonymous - Whether this is an anonymous upload (uses public-input-only folder)
  * @returns The public URL of the uploaded audio file, or null if upload failed
  */
 export async function uploadAudioToStorage(
   audioBlob: Blob,
   memoryId: string,
-  userId: string
+  userId?: string | null,
+  isAnonymous: boolean = false
 ): Promise<string | null> {
   try {
     const fileExt = 'webm';
     const fileName = `${memoryId}_${Date.now()}.${fileExt}`;
-    const filePath = `${userId}/${fileName}`;
+    
+    // For anonymous uploads, use public-input-only folder
+    // For authenticated uploads, use userId folder
+    const filePath = isAnonymous 
+      ? `public-input-only/${fileName}`
+      : `${userId || 'anonymous'}/${fileName}`;
 
     // Upload to Supabase Storage
     const { error: uploadError } = await supabase.storage

@@ -69,6 +69,8 @@ export async function createMemory(memory: Omit<Memory, 'id' | 'created_at'>) {
 }
 
 export async function getMemoriesInRadius(lat: number, lng: number, radiusM: number = 100) {
+  console.log(`[ghost] getMemoriesInRadius: lat=${lat.toFixed(6)}, lng=${lng.toFixed(6)}, radius=${radiusM}m`);
+  
   const { data, error } = await supabase
     .from('memories')
     .select('*')
@@ -77,8 +79,23 @@ export async function getMemoriesInRadius(lat: number, lng: number, radiusM: num
     .gte('lng', lng - (radiusM / (111000 * Math.cos(lat * Math.PI / 180))))
     .lte('lng', lng + (radiusM / (111000 * Math.cos(lat * Math.PI / 180))));
 
-  if (error) throw error;
-  return data as Memory[];
+  if (error) {
+    console.error('[ghost] getMemoriesInRadius error:', error);
+    
+    // Enhance error message for network errors
+    if (error.message?.includes('Failed to fetch') || error.message?.includes('NetworkError')) {
+      const enhancedError = new Error(
+        `Network error fetching memories: ${error.message}. ` +
+        `Check Supabase CORS settings and project status.`
+      );
+      throw enhancedError;
+    }
+    
+    throw error;
+  }
+  
+  console.log(`[ghost] getMemoriesInRadius returned ${data?.length || 0} memories`);
+  return (data || []) as Memory[];
 }
 
 export async function getMemoryById(id: string) {
