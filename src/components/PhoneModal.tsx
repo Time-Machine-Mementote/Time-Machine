@@ -21,25 +21,39 @@ export function PhoneModal({ isOpen, onClose, autoFocus = true }: PhoneModalProp
   useEffect(() => {
     if (isOpen && autoFocus) {
       setPhoneInput('');
+      
       // Aggressive auto-focus to open mobile keyboard
       // Multiple attempts with delays for better mobile compatibility (especially iOS/Safari)
       // This is critical for exhibition mode where keyboard should open immediately
       const focusInput = () => {
         if (inputRef.current) {
-          inputRef.current.focus();
-          // Force focus even if element is not visible yet
-          inputRef.current.click();
+          // Ensure input is visible and not disabled before focusing
+          const input = inputRef.current;
+          if (input.offsetParent !== null && !input.disabled) {
+            input.focus();
+            // Force focus even if element is not visible yet (for iOS)
+            input.click();
+            // Also try to show the keyboard by selecting text (helps on some devices)
+            if (input.setSelectionRange) {
+              input.setSelectionRange(0, 0);
+            }
+          }
         }
       };
       
-      // Immediate focus attempt
-      requestAnimationFrame(focusInput);
+      // Immediate focus attempt (after modal is rendered)
+      requestAnimationFrame(() => {
+        requestAnimationFrame(focusInput);
+      });
       
       // Multiple delayed attempts for iOS/Safari compatibility
+      // iOS sometimes blocks programmatic keyboard opening unless it happens in a user gesture
+      // These delays help catch the modal after it's fully visible
       setTimeout(focusInput, 50);
       setTimeout(focusInput, 150);
       setTimeout(focusInput, 300);
       setTimeout(focusInput, 500);
+      setTimeout(focusInput, 750); // Extra attempt for slow devices
     } else if (isOpen) {
       setPhoneInput('');
     }
@@ -129,25 +143,42 @@ export function PhoneModal({ isOpen, onClose, autoFocus = true }: PhoneModalProp
           </DialogTitle>
         </DialogHeader>
         <form onSubmit={handleSubmit} className="space-y-4 mt-4">
-          <Input
-            ref={inputRef}
-            type="tel"
-            inputMode="tel"
-            autoComplete="tel"
-            enterKeyHint="done"
-            placeholder="Phone number"
-            value={phoneInput}
-            onChange={(e) => setPhoneInput(e.target.value)}
-            disabled={isSubmitting}
-            className="w-full bg-black border-2 border-white text-white placeholder:text-white/60 focus-visible:ring-2 focus-visible:ring-white focus-visible:ring-offset-0 focus-visible:outline-none rounded-none"
-            style={{
-              backgroundColor: '#000000',
-              borderColor: '#FFFFFF',
-              color: '#FFFFFF',
-              caretColor: '#FFFFFF'
+          <div 
+            className="w-full"
+            onClick={(e) => {
+              // Make entire input area clickable - forward focus to input
+              if (inputRef.current && e.target !== inputRef.current) {
+                inputRef.current.focus();
+                inputRef.current.click();
+              }
             }}
-            autoFocus
-          />
+          >
+            <label htmlFor="phone-input" className="sr-only">
+              Phone number
+            </label>
+            <Input
+              id="phone-input"
+              ref={inputRef}
+              type="tel"
+              inputMode="tel"
+              autoComplete="tel"
+              enterKeyHint="done"
+              pattern="[0-9]*"
+              placeholder="Phone number"
+              value={phoneInput}
+              onChange={(e) => setPhoneInput(e.target.value)}
+              disabled={isSubmitting}
+              aria-label="Phone number"
+              className="w-full bg-black border-2 border-white text-white placeholder:text-white/60 focus-visible:ring-2 focus-visible:ring-white focus-visible:ring-offset-0 focus-visible:outline-none rounded-none"
+              style={{
+                backgroundColor: '#000000',
+                borderColor: '#FFFFFF',
+                color: '#FFFFFF',
+                caretColor: '#FFFFFF'
+              }}
+              autoFocus
+            />
+          </div>
           <Button
             type="submit"
             disabled={!phoneInput.trim() || isSubmitting}
