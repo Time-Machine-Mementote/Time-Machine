@@ -323,7 +323,7 @@ export function InputPage({ mode }: InputPageProps) {
       {/* Terminal-style description */}
       <div className="w-full max-w-2xl mb-8">
         <div className="font-mono text-lg md:text-xl lg:text-2xl text-gray-400 leading-loose p-6 md:p-8">
-          This is a (fucking) Time Machine. We believe this could change the world, and we need your help. Record now, and come back to your current location in the future to interact with the sound of the past. Thank you for your time.
+          This is a <span className="text-[0.4em]">(fucking)</span> Time Machine. We believe this could change the world, and we need your help. Record now, and come back to your current location in the future to interact with the sound of the past. Thank you for your time.
         </div>
       </div>
 
