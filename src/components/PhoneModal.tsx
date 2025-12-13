@@ -1,0 +1,139 @@
+import { useState, useEffect } from 'react';
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { Input } from '@/components/ui/input';
+import { Button } from '@/components/ui/button';
+import { usePhoneLead } from '@/hooks/usePhoneLead';
+import { Loader2 } from 'lucide-react';
+
+interface PhoneModalProps {
+  isOpen: boolean;
+  onClose: () => void;
+}
+
+export function PhoneModal({ isOpen, onClose }: PhoneModalProps) {
+  const [phoneInput, setPhoneInput] = useState('');
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const { submitPhone } = usePhoneLead();
+
+  // Reset input when modal opens
+  useEffect(() => {
+    if (isOpen) {
+      setPhoneInput('');
+    }
+  }, [isOpen]);
+
+  // Override dialog overlay to be pure black (no opacity tinting)
+  useEffect(() => {
+    if (isOpen) {
+      // Add style override for the dialog overlay
+      const style = document.createElement('style');
+      style.id = 'phone-modal-overlay-override';
+      style.textContent = `
+        [data-radix-dialog-overlay] {
+          background-color: #000000 !important;
+          opacity: 1 !important;
+        }
+      `;
+      document.head.appendChild(style);
+
+      return () => {
+        const existingStyle = document.getElementById('phone-modal-overlay-override');
+        if (existingStyle) {
+          existingStyle.remove();
+        }
+      };
+    }
+  }, [isOpen]);
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    
+    if (!phoneInput.trim()) {
+      return;
+    }
+
+    setIsSubmitting(true);
+    const success = await submitPhone(phoneInput);
+    setIsSubmitting(false);
+
+    if (success) {
+      setPhoneInput('');
+      // Small delay to ensure localStorage is updated
+      setTimeout(() => {
+        onClose();
+      }, 100);
+    }
+  };
+
+  return (
+    <Dialog open={isOpen} onOpenChange={() => {}}>
+      <DialogContent 
+        className="sm:max-w-md bg-black border-2 border-white shadow-none p-6 [&>button]:hidden" 
+        onInteractOutside={(e) => e.preventDefault()}
+        style={{ 
+          backgroundColor: '#000000',
+          borderColor: '#FFFFFF',
+          boxShadow: 'none'
+        }}
+      >
+        <DialogHeader>
+          <DialogTitle className="text-lg font-normal text-white">
+            Yaaaayou! Use this app anywhere you want to save a sound.{' '}
+            If you give us your number we can take you back in time and also invite you to our parties—we are moving to a warehouse in San Francisco in August 2026.{' '}
+            Ask G if you have any questions.{' '}
+            Thank you for your time!
+          </DialogTitle>
+        </DialogHeader>
+        <form onSubmit={handleSubmit} className="space-y-4 mt-4">
+          <Input
+            type="tel"
+            placeholder="Phone number"
+            value={phoneInput}
+            onChange={(e) => setPhoneInput(e.target.value)}
+            disabled={isSubmitting}
+            className="w-full bg-black border-2 border-white text-white placeholder:text-white/60 focus-visible:ring-2 focus-visible:ring-white focus-visible:ring-offset-0 focus-visible:outline-none rounded-none"
+            style={{
+              backgroundColor: '#000000',
+              borderColor: '#FFFFFF',
+              color: '#FFFFFF',
+              caretColor: '#FFFFFF'
+            }}
+            autoFocus
+          />
+          <Button
+            type="submit"
+            disabled={!phoneInput.trim() || isSubmitting}
+            className="w-full bg-black text-white border-2 border-white hover:bg-white hover:text-black focus-visible:ring-2 focus-visible:ring-white focus-visible:ring-offset-0 rounded-none disabled:opacity-50 disabled:cursor-not-allowed"
+            style={{
+              backgroundColor: '#000000',
+              color: '#FFFFFF',
+              borderColor: '#FFFFFF'
+            }}
+            onMouseEnter={(e) => {
+              if (!e.currentTarget.disabled) {
+                e.currentTarget.style.backgroundColor = '#FFFFFF';
+                e.currentTarget.style.color = '#000000';
+              }
+            }}
+            onMouseLeave={(e) => {
+              if (!e.currentTarget.disabled) {
+                e.currentTarget.style.backgroundColor = '#000000';
+                e.currentTarget.style.color = '#FFFFFF';
+              }
+            }}
+          >
+            {isSubmitting ? (
+              <>
+                <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                Submitting...
+              </>
+            ) : (
+              'Submit'
+            )}
+          </Button>
+        </form>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
