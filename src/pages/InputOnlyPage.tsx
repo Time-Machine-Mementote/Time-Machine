@@ -245,7 +245,22 @@ export function InputOnlyPage() {
               onClick={openAuthModal}
               variant="outline"
               size="sm"
-              className="font-mono bg-black text-white border-white hover:bg-white hover:text-black"
+              className="font-mono bg-black text-black border-black hover:bg-black hover:text-black focus-visible:ring-0 focus-visible:ring-offset-0 focus-visible:outline-none"
+              style={{
+                backgroundColor: '#000000',
+                color: '#000000',
+                borderColor: '#000000'
+              }}
+              onMouseEnter={(e) => {
+                e.currentTarget.style.backgroundColor = '#000000';
+                e.currentTarget.style.color = '#000000';
+                e.currentTarget.style.borderColor = '#000000';
+              }}
+              onMouseLeave={(e) => {
+                e.currentTarget.style.backgroundColor = '#000000';
+                e.currentTarget.style.color = '#000000';
+                e.currentTarget.style.borderColor = '#000000';
+              }}
             >
               Log in
             </Button>
