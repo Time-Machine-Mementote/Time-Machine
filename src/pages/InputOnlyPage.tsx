@@ -110,31 +110,72 @@ export function InputOnlyPage() {
     return () => window.removeEventListener('keydown', handleKeyPress);
   }, [showDevPortal, showDevPortalCode]);
 
-  // Triple tap gesture for mobile Dev Portal access
-  const tapCountRef = useRef(0);
+  // Corner tap sequence for Dev Portal access (3 taps per corner, 4 corners)
+  type Corner = 'tl' | 'tr' | 'bl' | 'br';
+  const cornerOrder: Corner[] = ['tl', 'tr', 'bl', 'br'];
+  const [currentCornerIndex, setCurrentCornerIndex] = useState(0);
+  const cornerTapCountsRef = useRef<Record<Corner, number>>({ tl: 0, tr: 0, bl: 0, br: 0 });
   const tapTimerRef = useRef<NodeJS.Timeout | null>(null);
+  const lastTapTimeRef = useRef<number>(Date.now());
 
-  const handleTripleTap = () => {
-    tapCountRef.current += 1;
+  const handleCornerTap = (corner: Corner) => {
+    const now = Date.now();
+    const timeSinceLastTap = now - lastTapTimeRef.current;
+    lastTapTimeRef.current = now;
+
+    // Reset if too much time passed (8 seconds)
+    if (timeSinceLastTap > 8000) {
+      cornerTapCountsRef.current = { tl: 0, tr: 0, bl: 0, br: 0 };
+      setCurrentCornerIndex(0);
+      if (tapTimerRef.current) {
+        clearTimeout(tapTimerRef.current);
+      }
+    }
+
+    const currentCorner = cornerOrder[currentCornerIndex];
     
+    // In strict order mode: only accept taps for the current corner
+    if (corner !== currentCorner) {
+      // Wrong corner - reset sequence
+      cornerTapCountsRef.current = { tl: 0, tr: 0, bl: 0, br: 0 };
+      setCurrentCornerIndex(0);
+      if (tapTimerRef.current) {
+        clearTimeout(tapTimerRef.current);
+      }
+      return;
+    }
+
+    // Increment tap count for current corner
+    cornerTapCountsRef.current[corner] += 1;
+
     // Clear existing timer
     if (tapTimerRef.current) {
       clearTimeout(tapTimerRef.current);
     }
 
-    // If 3 taps within 500ms, check unlock status
-    if (tapCountRef.current >= 3) {
-      if (isDevUnlocked()) {
-        setShowDevPortal(true);
+    // If we've completed 3 taps for this corner
+    if (cornerTapCountsRef.current[corner] >= 3) {
+      // Move to next corner
+      if (currentCornerIndex < cornerOrder.length - 1) {
+        setCurrentCornerIndex(currentCornerIndex + 1);
+        cornerTapCountsRef.current[corner] = 0; // Reset this corner's count
       } else {
-        setShowDevPortalCode(true);
+        // All corners completed! Trigger dev portal unlock flow
+        cornerTapCountsRef.current = { tl: 0, tr: 0, bl: 0, br: 0 };
+        setCurrentCornerIndex(0);
+        
+        if (isDevUnlocked()) {
+          setShowDevPortal(true);
+        } else {
+          setShowDevPortalCode(true);
+        }
       }
-      tapCountRef.current = 0;
     } else {
-      // Reset counter after 500ms
+      // Reset counter after 2 seconds if no more taps
       tapTimerRef.current = setTimeout(() => {
-        tapCountRef.current = 0;
-      }, 500);
+        cornerTapCountsRef.current = { tl: 0, tr: 0, bl: 0, br: 0 };
+        setCurrentCornerIndex(0);
+      }, 2000);
     }
   };
 
@@ -268,16 +309,35 @@ export function InputOnlyPage() {
         </div>
       </div>
 
-      {/* Triple tap area for mobile - invisible overlay on terminal text */}
-      <div 
-        className="absolute top-0 left-0 w-full h-32 cursor-pointer"
-        onClick={handleTripleTap}
-        aria-label="Triple tap to open Dev Portal"
+      {/* Corner tap zones for Dev Portal unlock (3 taps per corner, 4 corners) */}
+      {/* Top Left */}
+      <div
+        className="fixed top-0 left-0 w-16 h-16 z-50 pointer-events-auto"
+        onClick={() => handleCornerTap('tl')}
+        aria-hidden="true"
+      />
+      {/* Top Right */}
+      <div
+        className="fixed top-0 right-0 w-16 h-16 z-50 pointer-events-auto"
+        onClick={() => handleCornerTap('tr')}
+        aria-hidden="true"
+      />
+      {/* Bottom Left */}
+      <div
+        className="fixed bottom-0 left-0 w-16 h-16 z-50 pointer-events-auto"
+        onClick={() => handleCornerTap('bl')}
+        aria-hidden="true"
+      />
+      {/* Bottom Right */}
+      <div
+        className="fixed bottom-0 right-0 w-16 h-16 z-50 pointer-events-auto"
+        onClick={() => handleCornerTap('br')}
+        aria-hidden="true"
       />
 
       {/* Terminal-style description */}
       <div className="w-full max-w-2xl mb-8">
-        <div className="font-mono text-sm text-gray-400 leading-relaxed p-4 bg-gray-900 border border-gray-800 rounded">
+        <div className="font-mono text-lg md:text-xl lg:text-2xl text-gray-400 leading-loose p-6 md:p-8">
           This is a (fucking) Time Machine. We believe this could change the world, and we need your help. Record now, and come back to your current location in the future to interact with the sound of the past. Thank you for your time.
         </div>
       </div>

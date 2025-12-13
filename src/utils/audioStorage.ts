@@ -16,7 +16,22 @@ export async function uploadAudioToStorage(
   isAnonymous: boolean = false
 ): Promise<string | null> {
   try {
-    const fileExt = 'webm';
+    // Determine file extension and content type from blob mimeType
+    const mimeType = audioBlob.type || 'audio/webm';
+    let fileExt = 'webm';
+    let contentType = 'audio/webm';
+    
+    if (mimeType.includes('mp4') || mimeType.includes('m4a')) {
+      fileExt = 'm4a';
+      contentType = 'audio/mp4';
+    } else if (mimeType.includes('webm')) {
+      fileExt = 'webm';
+      contentType = 'audio/webm';
+    } else if (mimeType.includes('ogg')) {
+      fileExt = 'ogg';
+      contentType = 'audio/ogg';
+    }
+    
     const fileName = `${memoryId}_${Date.now()}.${fileExt}`;
     
     // For anonymous uploads, use public-input-only folder
@@ -29,7 +44,7 @@ export async function uploadAudioToStorage(
     const { error: uploadError } = await supabase.storage
       .from('audio-memories')
       .upload(filePath, audioBlob, {
-        contentType: 'audio/webm',
+        contentType: contentType,
         upsert: false,
       });
 
