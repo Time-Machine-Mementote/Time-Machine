@@ -29,6 +29,7 @@ export function InputPage({ mode }: InputPageProps) {
   const [location, setLocation] = useState<{ lat: number; lng: number } | null>(null);
   const [locationError, setLocationError] = useState<string | null>(null);
   const [recordingError, setRecordingError] = useState<string | null>(null);
+  const [pendingRecordingStart, setPendingRecordingStart] = useState(false);
   
   const { phone, isCollected, isLoading: phoneLoading } = usePhoneLead();
   const { user, openAuthModal, isAuthModalOpen, closeAuthModal } = useAuth();
@@ -218,6 +219,58 @@ export function InputPage({ mode }: InputPageProps) {
     onRecordingComplete: handleRecordingComplete,
   });
 
+  // Helper to require auth for input (normal mode only)
+  const requireAuthForInput = async (): Promise<boolean> => {
+    // Exhibition mode: no auth required
+    if (mode === 'exhibition') {
+      return true;
+    }
+
+    // Normal mode: check if user is authenticated
+    if (user) {
+      return true;
+    }
+
+    // Not authenticated - show login modal
+    setPendingRecordingStart(true);
+    openAuthModal();
+    return false;
+  };
+
+  // Handle record button click with auth check
+  const handleRecordClick = async () => {
+    if (isRecording) {
+      stopRecording();
+      return;
+    }
+
+    // Check auth before starting recording (normal mode only)
+    const canProceed = await requireAuthForInput();
+    if (canProceed) {
+      startRecording();
+    }
+  };
+
+  // Resume recording after successful login
+  useEffect(() => {
+    if (pendingRecordingStart && user && !isAuthModalOpen) {
+      // User just logged in, resume recording
+      // Small delay to ensure auth state is fully updated
+      const timer = setTimeout(() => {
+        setPendingRecordingStart(false);
+        startRecording();
+      }, 100);
+      return () => clearTimeout(timer);
+    }
+  }, [user, isAuthModalOpen, pendingRecordingStart, startRecording]);
+
+  // Reset pending state if user closes auth modal without logging in
+  useEffect(() => {
+    if (!isAuthModalOpen && pendingRecordingStart && !user) {
+      setPendingRecordingStart(false);
+    }
+  }, [isAuthModalOpen, pendingRecordingStart, user]);
+
   return (
     <div className="min-h-screen bg-black flex flex-col items-center justify-center p-6 relative">
       {/* Login Header - only show in normal mode */}
@@ -228,24 +281,14 @@ export function InputPage({ mode }: InputPageProps) {
             {user ? (
               <span className="font-mono text-white text-sm">{user.email}</span>
             ) : (
-              <>
-                <Button
-                  onClick={openAuthModal}
-                  variant="outline"
-                  size="sm"
-                  className="font-mono bg-black text-white border-white hover:bg-white hover:text-black"
-                >
-                  Log in
-                </Button>
-                <Button
-                  onClick={openAuthModal}
-                  variant="outline"
-                  size="sm"
-                  className="font-mono bg-black text-white border-white hover:bg-white hover:text-black"
-                >
-                  Sign up
-                </Button>
-              </>
+              <Button
+                onClick={openAuthModal}
+                variant="outline"
+                size="sm"
+                className="font-mono bg-black text-white border-white hover:bg-white hover:text-black"
+              >
+                Log in
+              </Button>
             )}
           </div>
         </div>
@@ -295,7 +338,7 @@ export function InputPage({ mode }: InputPageProps) {
           <div className="flex flex-col sm:flex-row gap-4 items-center">
             {/* Record Button */}
             <Button
-              onClick={isRecording ? stopRecording : startRecording}
+              onClick={handleRecordClick}
               size="lg"
               className={`text-2xl px-12 py-8 font-mono rounded-none border-2 ${
                 isRecording
@@ -392,9 +435,16 @@ export function InputPage({ mode }: InputPageProps) {
       {mode === 'normal' && (
         <AuthModal 
           isOpen={isAuthModalOpen} 
-          onClose={closeAuthModal}
+          onClose={() => {
+            closeAuthModal();
+            // If user closes without logging in, clear pending recording
+            if (pendingRecordingStart && !user) {
+              setPendingRecordingStart(false);
+            }
+          }}
           onSuccess={() => {
             toast.success('Logged in successfully');
+            // Recording will auto-resume via useEffect when user state updates
           }}
         />
       )}
