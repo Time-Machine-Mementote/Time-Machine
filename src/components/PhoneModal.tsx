@@ -8,9 +8,10 @@ import { Loader2, X } from 'lucide-react';
 interface PhoneModalProps {
   isOpen: boolean;
   onClose: () => void;
+  autoFocus?: boolean;
 }
 
-export function PhoneModal({ isOpen, onClose }: PhoneModalProps) {
+export function PhoneModal({ isOpen, onClose, autoFocus = true }: PhoneModalProps) {
   const [phoneInput, setPhoneInput] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
   const { submitPhone } = usePhoneLead();
@@ -18,19 +19,31 @@ export function PhoneModal({ isOpen, onClose }: PhoneModalProps) {
 
   // Reset input and auto-focus when modal opens
   useEffect(() => {
-    if (isOpen) {
+    if (isOpen && autoFocus) {
       setPhoneInput('');
-      // Auto-focus input to open mobile keyboard
-      // Use requestAnimationFrame + setTimeout for iOS/Safari compatibility
-      requestAnimationFrame(() => {
-        inputRef.current?.focus();
-        // Fallback timeout for iOS
-        setTimeout(() => {
-          inputRef.current?.focus();
-        }, 50);
-      });
+      // Aggressive auto-focus to open mobile keyboard
+      // Multiple attempts with delays for better mobile compatibility (especially iOS/Safari)
+      // This is critical for exhibition mode where keyboard should open immediately
+      const focusInput = () => {
+        if (inputRef.current) {
+          inputRef.current.focus();
+          // Force focus even if element is not visible yet
+          inputRef.current.click();
+        }
+      };
+      
+      // Immediate focus attempt
+      requestAnimationFrame(focusInput);
+      
+      // Multiple delayed attempts for iOS/Safari compatibility
+      setTimeout(focusInput, 50);
+      setTimeout(focusInput, 150);
+      setTimeout(focusInput, 300);
+      setTimeout(focusInput, 500);
+    } else if (isOpen) {
+      setPhoneInput('');
     }
-  }, [isOpen]);
+  }, [isOpen, autoFocus]);
 
   // Override dialog overlay to be pure black (no opacity tinting)
   useEffect(() => {

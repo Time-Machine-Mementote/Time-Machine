@@ -335,7 +335,11 @@ export function InputPage({ mode }: InputPageProps) {
 
       {/* Phone Modal - only in exhibition mode, after successful save */}
       {mode === 'exhibition' && (
-        <PhoneModal isOpen={showPhoneModal} onClose={() => setShowPhoneModal(false)} />
+        <PhoneModal 
+          isOpen={showPhoneModal} 
+          onClose={() => setShowPhoneModal(false)}
+          autoFocus={true}
+        />
       )}
 
       {/* Coming Soon Modal */}
