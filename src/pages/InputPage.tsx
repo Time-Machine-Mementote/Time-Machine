@@ -7,6 +7,7 @@ import { AuthModal } from '@/components/AuthModal';
 import { useRecorder } from '@/hooks/useRecorder';
 import { usePhoneLead } from '@/hooks/usePhoneLead';
 import { useAuth } from '@/contexts/AuthContext';
+import { useLocationHeader } from '@/hooks/useLocationHeader';
 import { supabase } from '@/integrations/supabase/client';
 import { uploadAudioToStorage } from '@/utils/audioStorage';
 import { isDevUnlocked } from '@/utils/devPortalUnlock';
@@ -34,6 +35,7 @@ export function InputPage({ mode }: InputPageProps) {
   const { phone, isCollected, isLoading: phoneLoading } = usePhoneLead();
   const { user, openAuthModal, isAuthModalOpen, closeAuthModal } = useAuth();
   const recordingCountRef = useRef(0);
+  const locationHeader = useLocationHeader(location);
 
   // Request geolocation on mount
   useEffect(() => {
@@ -319,6 +321,17 @@ export function InputPage({ mode }: InputPageProps) {
         onClick={() => handleCornerTap('br')}
         aria-hidden="true"
       />
+
+      {/* Live date/time + location header */}
+      <div className="w-full max-w-2xl mb-4">
+        <div className="font-mono text-sm md:text-base text-white opacity-80 px-6 md:px-8">
+          {locationHeader.day && locationHeader.date && locationHeader.time && locationHeader.town ? (
+            `${locationHeader.day} · ${locationHeader.date} · ${locationHeader.time} · ${locationHeader.town}`
+          ) : (
+            locationHeader.isLoading ? 'Locating…' : 'Unknown location'
+          )}
+        </div>
+      </div>
 
       {/* Terminal-style description */}
       <div className="w-full max-w-2xl mb-8">
