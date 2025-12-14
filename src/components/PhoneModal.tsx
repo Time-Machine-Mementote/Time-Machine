@@ -135,11 +135,8 @@ export function PhoneModal({ isOpen, onClose, autoFocus = true }: PhoneModalProp
           >
             <X className="h-4 w-4" />
           </Button>
-          <DialogTitle className="text-lg font-normal text-white pr-8">
-            Yaaaayou! Use this app anywhere you want to save a sound.{' '}
-            If you give us your number we can take you back in time and also invite you to our parties—we are moving to a warehouse in San Francisco in August 2026.{' '}
-            Ask G if you have any questions.{' '}
-            Thank you for your time!
+          <DialogTitle className="text-xl md:text-2xl font-normal text-white pr-8">
+            If you'd like, please provide your number so we can take you back in time. Our storefront opens in SF in August 2026, we'd love to invite you for a time. Close the page to opt out. Thank you for your time.
           </DialogTitle>
         </DialogHeader>
         <form onSubmit={handleSubmit} className="space-y-4 mt-4">
