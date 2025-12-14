@@ -17,7 +17,7 @@ export function useLocationHeader(location: { lat: number; lng: number } | null)
     isLoading: true,
   });
 
-  // Update date/time every minute
+  // Update date/time every second
   useEffect(() => {
     const updateDateTime = () => {
       const now = new Date();
@@ -32,10 +32,11 @@ export function useLocationHeader(location: { lat: number; lng: number } | null)
         year: 'numeric' 
       });
       
-      // Time: 12-hour with AM/PM
+      // Time: 12-hour with AM/PM (includes seconds)
       const time = now.toLocaleTimeString('en-US', { 
         hour: 'numeric', 
         minute: '2-digit',
+        second: '2-digit',
         hour12: true 
       });
       
@@ -50,8 +51,8 @@ export function useLocationHeader(location: { lat: number; lng: number } | null)
     // Update immediately
     updateDateTime();
     
-    // Then update every minute
-    const interval = setInterval(updateDateTime, 60000);
+    // Then update every second
+    const interval = setInterval(updateDateTime, 1000);
     
     return () => clearInterval(interval);
   }, []);
