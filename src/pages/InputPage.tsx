@@ -91,12 +91,12 @@ export function InputPage({ mode }: InputPageProps) {
     },
   });
 
-  // 2-tap gesture on "Coming Soon" modal - open dev portal
+  // 5-tap gesture on "Coming Soon" modal - open dev portal
   const { onPointerDown: onComingSoonTap, onClick: onComingSoonClick } = useMultiTap({
-    count: 2,
-    windowMs: 2000,
+    count: 5,
+    windowMs: 2500,
     onTrigger: () => {
-      console.log('🔓 2-tap gesture on coming soon modal - opening dev portal');
+      console.log('🔓 5-tap gesture on coming soon modal - opening dev portal');
       // Unlock dev portal first
       setDevUnlocked();
       toast.info('Opening Dev Portal...');
