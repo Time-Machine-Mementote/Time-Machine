@@ -35,14 +35,11 @@ export function useOutputPlayback({
   const [isOutputEnabled, setIsOutputEnabled] = useState(false);
   const intervalRef = useRef<NodeJS.Timeout | null>(null);
   const isInitializedRef = useRef(false);
+  const isStartingRef = useRef(false); // Guard against concurrent start calls
 
-  // Load persisted state from localStorage
-  useEffect(() => {
-    const saved = localStorage.getItem('tm_output_enabled');
-    if (saved === 'true') {
-      setIsOutputEnabled(true);
-    }
-  }, []);
+  // Note: We don't auto-load from localStorage to avoid conflicts
+  // The state should be controlled explicitly by user actions
+  // localStorage is only used for persistence, not initialization
 
   // Persist state to localStorage
   useEffect(() => {
@@ -51,76 +48,100 @@ export function useOutputPlayback({
 
   // Start continuous playback - uses shared utility (same as Ghost Mode)
   const startOutput = useCallback(async () => {
-    // Step 1: Ensure location is available
-    let currentLocation = location;
-    
-    if (!currentLocation || !currentLocation.lat || !currentLocation.lng) {
-      // Try to request location if function provided
-      if (requestLocation) {
-        console.log('[output] Location not available, requesting...');
-        currentLocation = await requestLocation();
-      }
-      
-      if (!currentLocation || !currentLocation.lat || !currentLocation.lng) {
-        toast.error('Location required', {
-          description: 'Location required for output playback. Please enable location access.',
-        });
-        return;
-      }
+    // Guard against concurrent calls
+    if (isStartingRef.current) {
+      console.log('[output] Start already in progress, ignoring duplicate call');
+      return;
     }
-
-    // Step 2: Use shared playback function (same as Ghost Mode)
-    const result = await startAreaOutputPlayback(currentLocation, userId, radiusM);
-
-    if (!result.success) {
-      if (result.memoriesFound === 0) {
-        toast.info('No memories found', {
-          description: `No memories found within ${radiusM}m radius.`,
-        });
-      } else if (result.memoriesWithAudio === 0) {
-        toast.info('No audio memories found', {
-          description: `Found ${result.memoriesFound} memories but none have audio recordings.`,
-        });
-      } else {
-        toast.error('Failed to start output', {
-          description: result.error || 'Unknown error',
-        });
-      }
+    
+    if (isOutputEnabled) {
+      console.log('[output] Already enabled, ignoring start call');
       return;
     }
 
-    // Step 3: Mark as enabled and start continuous refresh
-    setIsOutputEnabled(true);
-    isInitializedRef.current = true;
+    isStartingRef.current = true;
 
-    // Start continuous playback - periodically refresh memories (same as Ghost Mode)
-    // Use a ref to track the location used for refresh (updates if location state changes)
-    const locationForRefreshRef = { current: currentLocation };
-    intervalRef.current = setInterval(async () => {
-      try {
-        // Use latest location from state if available, otherwise use stored location
-        // This allows the refresh to use updated location if user moves
-        const latestLocation = location || locationForRefreshRef.current;
-        if (latestLocation && latestLocation.lat && latestLocation.lng) {
-          locationForRefreshRef.current = latestLocation; // Update ref for next iteration
-          await refreshAreaOutputMemories(latestLocation, userId, radiusM);
+    try {
+      // Step 1: Ensure location is available
+      let currentLocation = location;
+      
+      if (!currentLocation || !currentLocation.lat || !currentLocation.lng) {
+        // Try to request location if function provided
+        if (requestLocation) {
+          console.log('[output] Location not available, requesting...');
+          currentLocation = await requestLocation();
         }
-      } catch (err) {
-        console.warn('[output] Background refresh error:', err);
+        
+        if (!currentLocation || !currentLocation.lat || !currentLocation.lng) {
+          toast.error('Location required', {
+            description: 'Location required for output playback. Please enable location access.',
+          });
+          return;
+        }
       }
-    }, 10000); // Refresh every 10 seconds (same as Ghost Mode)
 
-    toast.success('Output enabled', {
-      description: `Playing ${result.memoriesWithAudio} memories in radius.`,
-    });
-  }, [location, radiusM, userId, requestLocation]);
+      // Step 2: Use shared playback function (same as Ghost Mode)
+      const result = await startAreaOutputPlayback(currentLocation, userId, radiusM);
+
+      if (!result.success) {
+        if (result.memoriesFound === 0) {
+          toast.info('No memories found', {
+            description: `No memories found within ${radiusM}m radius.`,
+          });
+        } else if (result.memoriesWithAudio === 0) {
+          toast.info('No audio memories found', {
+            description: `Found ${result.memoriesFound} memories but none have audio recordings.`,
+          });
+        } else {
+          toast.error('Failed to start output', {
+            description: result.error || 'Unknown error',
+          });
+        }
+        return;
+      }
+
+      // Step 3: Mark as enabled and start continuous refresh
+      setIsOutputEnabled(true);
+      isInitializedRef.current = true;
+
+      // Start continuous playback - periodically refresh memories (same as Ghost Mode)
+      // Use a ref to track the location used for refresh (updates if location state changes)
+      const locationForRefreshRef = { current: currentLocation };
+      intervalRef.current = setInterval(async () => {
+        try {
+          // Use latest location from state if available, otherwise use stored location
+          // This allows the refresh to use updated location if user moves
+          const latestLocation = location || locationForRefreshRef.current;
+          if (latestLocation && latestLocation.lat && latestLocation.lng) {
+            locationForRefreshRef.current = latestLocation; // Update ref for next iteration
+            await refreshAreaOutputMemories(latestLocation, userId, radiusM);
+          }
+        } catch (err) {
+          console.warn('[output] Background refresh error:', err);
+        }
+      }, 10000); // Refresh every 10 seconds (same as Ghost Mode)
+
+      toast.success('Output enabled', {
+        description: `Playing ${result.memoriesWithAudio} memories in radius.`,
+      });
+    } finally {
+      isStartingRef.current = false;
+    }
+  }, [location, radiusM, userId, requestLocation, isOutputEnabled]);
 
   // Stop playback
   const stopOutput = useCallback(() => {
+    // Guard: don't stop if already stopped
+    if (!isOutputEnabled) {
+      console.log('[output] Already disabled, ignoring stop call');
+      return;
+    }
+
     audioQueue.mute();
     audioQueue.clear();
     setIsOutputEnabled(false);
     isInitializedRef.current = false;
+    isStartingRef.current = false; // Reset start guard
 
     if (intervalRef.current) {
       clearInterval(intervalRef.current);
@@ -128,7 +149,7 @@ export function useOutputPlayback({
     }
 
     toast.info('Output disabled');
-  }, []);
+  }, [isOutputEnabled]);
 
   // Toggle output
   const toggleOutput = useCallback(async () => {
@@ -140,16 +161,17 @@ export function useOutputPlayback({
   }, [isOutputEnabled, startOutput, stopOutput]);
 
   // Auto-start if enabled prop changes to true
-  // Note: This effect is intentionally minimal - enabled is always false in our use case
-  // so this won't trigger, but it's here for future use
+  // Note: In our use case, enabled is always false (controlled by gesture)
+  // So this effect only handles the enabled=true case for future use
+  // We do NOT auto-stop when enabled=false to avoid conflicts with gesture control
   useEffect(() => {
     if (enabled && !isOutputEnabled && !isInitializedRef.current && location) {
       startOutput();
-    } else if (!enabled && isOutputEnabled) {
-      stopOutput();
     }
+    // Note: We intentionally don't auto-stop when enabled=false
+    // The gesture toggle should be the only way to stop
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [enabled, isOutputEnabled]);
+  }, [enabled]);
 
   // Cleanup on unmount
   useEffect(() => {
