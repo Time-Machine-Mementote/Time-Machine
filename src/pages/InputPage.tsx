@@ -98,7 +98,10 @@ export function InputPage({ mode }: InputPageProps) {
     onTrigger: () => {
       console.log('🔓 5-tap gesture on title - opening dev portal');
       toast.info('Opening Dev Portal...');
-      navigate('/dev');
+      // Use setTimeout to ensure navigation happens after toast is shown
+      setTimeout(() => {
+        navigate('/dev');
+      }, 100);
     },
   });
   const recordingCountRef = useRef(0);
@@ -359,7 +362,7 @@ export function InputPage({ mode }: InputPageProps) {
               <span className="font-mono text-white text-sm">{user.email}</span>
             ) : (
               <Button
-                onClick={openAuthModal}
+                onClick={() => navigate('/login')}
                 variant="outline"
                 size="sm"
                 className="font-mono bg-black text-white border-white hover:bg-white hover:text-black"

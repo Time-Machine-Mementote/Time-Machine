@@ -92,7 +92,10 @@ export function InputOnlyPage() {
     onTrigger: () => {
       console.log('🔓 5-tap gesture on title - opening dev portal');
       toast.info('Opening Dev Portal...');
-      navigate('/dev');
+      // Use setTimeout to ensure navigation happens after toast is shown
+      setTimeout(() => {
+        navigate('/dev');
+      }, 100);
     },
   });
   const recordingCountRef = useRef(0);
@@ -358,29 +361,29 @@ export function InputOnlyPage() {
           {user ? (
             <span className="font-mono text-white text-sm">{user.email}</span>
           ) : (
-            <Button
-              onClick={openAuthModal}
-              variant="outline"
-              size="sm"
-              className="font-mono bg-black text-black border-black hover:bg-black hover:text-black focus-visible:ring-0 focus-visible:ring-offset-0 focus-visible:outline-none"
-              style={{
-                backgroundColor: '#000000',
-                color: '#000000',
-                borderColor: '#000000'
-              }}
-              onMouseEnter={(e) => {
-                e.currentTarget.style.backgroundColor = '#000000';
-                e.currentTarget.style.color = '#000000';
-                e.currentTarget.style.borderColor = '#000000';
-              }}
-              onMouseLeave={(e) => {
-                e.currentTarget.style.backgroundColor = '#000000';
-                e.currentTarget.style.color = '#000000';
-                e.currentTarget.style.borderColor = '#000000';
-              }}
-            >
-              Log in
-            </Button>
+              <Button
+                onClick={() => navigate('/login')}
+                variant="outline"
+                size="sm"
+                className="font-mono bg-black text-black border-black hover:bg-black hover:text-black focus-visible:ring-0 focus-visible:ring-offset-0 focus-visible:outline-none"
+                style={{
+                  backgroundColor: '#000000',
+                  color: '#000000',
+                  borderColor: '#000000'
+                }}
+                onMouseEnter={(e) => {
+                  e.currentTarget.style.backgroundColor = '#000000';
+                  e.currentTarget.style.color = '#000000';
+                  e.currentTarget.style.borderColor = '#000000';
+                }}
+                onMouseLeave={(e) => {
+                  e.currentTarget.style.backgroundColor = '#000000';
+                  e.currentTarget.style.color = '#000000';
+                  e.currentTarget.style.borderColor = '#000000';
+                }}
+              >
+                Log in
+              </Button>
           )}
         </div>
       </div>
