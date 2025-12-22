@@ -91,12 +91,17 @@ export function InputOnlyPage() {
     windowMs: 2000,
     onTrigger: () => {
       console.log('🔓 2-tap gesture on coming soon modal - opening dev portal');
-      setShowComingSoonModal(false); // Close the modal first
       toast.info('Opening Dev Portal...');
-      // Use setTimeout to ensure navigation happens after toast is shown
+      // Close modal and navigate - use window.location as fallback if navigate doesn't work
+      setShowComingSoonModal(false);
       setTimeout(() => {
-        navigate('/dev');
-      }, 100);
+        try {
+          navigate('/dev');
+        } catch (error) {
+          console.error('Navigation error, using window.location:', error);
+          window.location.href = '/dev';
+        }
+      }, 200);
     },
   });
   const recordingCountRef = useRef(0);
