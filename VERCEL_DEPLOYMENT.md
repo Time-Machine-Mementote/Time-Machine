@@ -62,3 +62,8 @@ If you see CORS errors, you may need to:
 - Check Mapbox dashboard to ensure token is active
 - Make sure token has proper permissions
 
+
+
+
+
+

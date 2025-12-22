@@ -134,7 +134,7 @@ export class AudioQueue {
   }
 
   // Add memory to queue with priority calculation
-  addMemory(memory: Memory, userLocation: UserLocation, isOwner: boolean, isFriend: boolean) {
+  addMemory(memory: Memory, userLocation: UserLocation, isOwner: boolean, isFriend: boolean, skipDistanceCheck: boolean = false) {
     // Skip if memory doesn't have audio
     if (!memory.audio_url) {
       console.log('Skipping memory without audio_url:', memory.id);
@@ -156,8 +156,8 @@ export class AudioQueue {
       memory.lat, memory.lng
     );
 
-    // Skip if too far
-    if (distance > memory.radius_m) {
+    // Skip if too far (unless distance check is skipped for exhibition mode)
+    if (!skipDistanceCheck && distance > memory.radius_m) {
       console.log('Memory too far:', memory.id, 'distance:', distance, 'radius:', memory.radius_m);
       return;
     }
@@ -659,6 +659,10 @@ export class AudioQueue {
 
   getQueue(): AudioQueueItem[] {
     return [...this.queue];
+  }
+
+  getPrimaryAudioElement(): HTMLAudioElement | null {
+    return this.audioElement;
   }
 
   setCooldown(cooldownMs: number) {

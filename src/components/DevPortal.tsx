@@ -3,7 +3,7 @@ import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { X, Database, MapPin, Volume2, User, RefreshCw, Ghost, Filter, Calendar } from 'lucide-react';
+import { X, Database, MapPin, Volume2, User, RefreshCw, Ghost, Filter, Calendar, Sliders } from 'lucide-react';
 import { supabase } from '@/integrations/supabase/client';
 import { audioQueue } from '@/utils/audioQueue';
 import { toast } from 'sonner';
@@ -14,6 +14,7 @@ import mapboxgl from 'mapbox-gl';
 import 'mapbox-gl/dist/mapbox-gl.css';
 import { MemoryPlayerPanel } from '@/components/MemoryPlayerPanel';
 import { GhostDebugPanel } from '@/components/GhostDebugPanel';
+import { DJAudioRack } from '@/components/DJAudioRack';
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sheet';
 
 // Set Mapbox access token (same pattern as MapScreen)
@@ -27,11 +28,14 @@ interface DevPortalProps {
   onClose: () => void;
   userLocation: { lat: number; lng: number; accuracy?: number } | null;
   userId?: string;
+  showDJ?: boolean;
+  onToggleDJ?: () => void;
+  audioElement?: HTMLAudioElement | null;
 }
 
 const PREVIEW_RADIUS = 100; // 100 meters
 
-export function DevPortal({ isOpen, onClose, userLocation, userId }: DevPortalProps) {
+export function DevPortal({ isOpen, onClose, userLocation, userId, showDJ = false, onToggleDJ, audioElement }: DevPortalProps) {
   // ALL HOOKS MUST BE CALLED BEFORE ANY EARLY RETURNS
   const [memories, setMemories] = useState<Memory[]>([]);
   const [hasError, setHasError] = useState<string | null>(null);
@@ -71,6 +75,11 @@ export function DevPortal({ isOpen, onClose, userLocation, userId }: DevPortalPr
   const [userIdFilterInput, setUserIdFilterInput] = useState('');
   const [activeUserIdFilter, setActiveUserIdFilter] = useState<string | undefined>(undefined);
   const [showFilters, setShowFilters] = useState(false);
+
+  // Debug: log when showDJ changes
+  useEffect(() => {
+    console.log('DevPortal: showDJ prop changed to:', showDJ, 'onToggleDJ exists:', !!onToggleDJ);
+  }, [showDJ, onToggleDJ]);
   
   // Selected memory for audio playback
   const [selectedMemory, setSelectedMemory] = useState<Memory | null>(null);
@@ -106,31 +115,54 @@ export function DevPortal({ isOpen, onClose, userLocation, userId }: DevPortalPr
       return;
     }
 
-    try {
-      map.current = new mapboxgl.Map({
-        container: mapContainer.current,
-        style: 'mapbox://styles/mapbox/dark-v11',
-        center: userLocation ? [userLocation.lng, userLocation.lat] : BERKELEY_CAMPUS_CENTER,
-        zoom: userLocation ? 16 : BERKELEY_CAMPUS_ZOOM,
-      });
-
-      map.current.on('load', () => {
-        setIsMapLoaded(true);
-      });
-
-      map.current.on('error', (e: any) => {
-        console.error('Mapbox error:', e);
-        setHasError(`Map failed to load: ${e.error?.message || 'Unknown error'}`);
-        toast.error('Map failed to load');
-      });
-    } catch (error) {
-      console.error('Failed to initialize map:', error);
-      const errorMessage = error instanceof Error ? error.message : 'Unknown error';
-      setHasError(`Map initialization failed: ${errorMessage}`);
-      toast.error('Failed to initialize map');
+    // Ensure mapboxgl.accessToken is set
+    if (!mapboxgl.accessToken) {
+      mapboxgl.accessToken = MAPBOX_TOKEN;
     }
 
+    // Small delay to ensure container is rendered
+    const initTimer = setTimeout(() => {
+      try {
+        // Verify container is still available
+        if (!mapContainer.current) {
+          console.warn('Map container no longer available');
+          return;
+        }
+
+        map.current = new mapboxgl.Map({
+          container: mapContainer.current,
+          style: 'mapbox://styles/mapbox/dark-v11',
+          center: userLocation ? [userLocation.lng, userLocation.lat] : BERKELEY_CAMPUS_CENTER,
+          zoom: userLocation ? 16 : BERKELEY_CAMPUS_ZOOM,
+          attributionControl: false,
+        });
+
+        map.current.on('load', () => {
+          setIsMapLoaded(true);
+          setHasError(null);
+          console.log('Dev Portal map loaded successfully');
+        });
+
+        map.current.on('error', (e: any) => {
+          console.error('Mapbox error:', e);
+          const errorMsg = e.error?.message || e.message || 'Unknown error';
+          setHasError(`Map failed to load: ${errorMsg}`);
+          toast.error(`Map failed to load: ${errorMsg}`);
+        });
+
+        map.current.on('style.load', () => {
+          console.log('Map style loaded');
+        });
+      } catch (error) {
+        console.error('Failed to initialize map:', error);
+        const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+        setHasError(`Map initialization failed: ${errorMessage}`);
+        toast.error(`Failed to initialize map: ${errorMessage}`);
+      }
+    }, 100);
+
     return () => {
+      clearTimeout(initTimer);
       if (map.current) {
         try {
           map.current.remove();
@@ -662,6 +694,28 @@ Check Supabase URL: ${supabaseUrl || 'NOT SET'}`;
                 Debug
               </Button>
             )}
+            <Button
+              onClick={(e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                console.log('DJ Rack button clicked, current showDJ:', showDJ, 'onToggleDJ exists:', !!onToggleDJ);
+                if (onToggleDJ) {
+                  onToggleDJ();
+                  console.log('onToggleDJ called, new showDJ should be:', !showDJ);
+                } else {
+                  console.warn('onToggleDJ is not provided!');
+                }
+              }}
+              variant="outline"
+              size="sm"
+              className={`pointer-events-auto font-terminal border-white hover:bg-white hover:text-black ${
+                showDJ ? 'bg-white text-black' : 'bg-black text-white'
+              }`}
+              style={{ pointerEvents: 'auto' }}
+            >
+              <Sliders className="h-4 w-4 mr-2" />
+              DJ Rack {showDJ ? '(ON)' : '(OFF)'}
+            </Button>
             <Button
               onClick={() => setShowFilters(!showFilters)}
               variant="outline"

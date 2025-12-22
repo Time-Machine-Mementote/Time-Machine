@@ -1,5 +1,6 @@
 // Auth Modal Component - Shows sign in/sign up form when needed
 import { useState } from 'react'
+import { useNavigate } from 'react-router-dom'
 import { supabase } from '../integrations/supabase/client'
 import { toast } from 'sonner'
 import { Sheet, SheetContent } from '@/components/ui/sheet'
@@ -14,6 +15,7 @@ interface AuthModalProps {
 const SECRET_CODE = '8463'
 
 export function AuthModal({ isOpen, onClose, onSuccess }: AuthModalProps) {
+  const navigate = useNavigate()
   const [isSignUp, setIsSignUp] = useState(false)
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
@@ -34,6 +36,9 @@ export function AuthModal({ isOpen, onClose, onSuccess }: AuthModalProps) {
           return
         }
         
+        // Sign up without email confirmation
+        // Note: For this to work without email confirmation, Supabase project settings
+        // must have "Enable email confirmations" disabled in Auth settings
         const { data, error } = await supabase.auth.signUp({
           email,
           password,
@@ -41,12 +46,28 @@ export function AuthModal({ isOpen, onClose, onSuccess }: AuthModalProps) {
             data: {
               full_name: fullName,
             },
+            // Disable email confirmation redirect - don't send user to email link
+            emailRedirectTo: undefined,
           },
         })
         
         if (error) throw error
-        toast.success('Check your email for the confirmation link!')
-        // Don't close on signup - they need to verify email first
+        
+        // Show success message (no email-related language)
+        toast.success('Account created. Please log in.')
+        
+        // Close modal
+        onClose()
+        
+        // Navigate to login page with credentials in state for auto-fill
+        // Credentials are passed via navigation state (not persisted)
+        navigate('/login', {
+          state: {
+            email,
+            password,
+            fromSignUp: true,
+          },
+        })
       } else {
         const { data, error } = await supabase.auth.signInWithPassword({
           email,

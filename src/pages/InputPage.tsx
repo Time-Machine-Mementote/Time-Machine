@@ -11,6 +11,9 @@ import { useLocationHeader } from '@/hooks/useLocationHeader';
 import { supabase } from '@/integrations/supabase/client';
 import { uploadAudioToStorage } from '@/utils/audioStorage';
 import { isDevUnlocked } from '@/utils/devPortalUnlock';
+import { useMultiTap } from '@/hooks/useMultiTap';
+import { useOutputPlayback } from '@/hooks/useOutputPlayback';
+import { useNavigate } from 'react-router-dom';
 import { toast } from 'sonner';
 import { Loader2 } from 'lucide-react';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '@/components/ui/dialog';
@@ -22,6 +25,7 @@ interface InputPageProps {
 }
 
 export function InputPage({ mode }: InputPageProps) {
+  const navigate = useNavigate();
   const [showPhoneModal, setShowPhoneModal] = useState(false);
   const [showDevPortal, setShowDevPortal] = useState(false);
   const [showDevPortalCode, setShowDevPortalCode] = useState(false);
@@ -34,6 +38,35 @@ export function InputPage({ mode }: InputPageProps) {
   
   const { phone, isCollected, isLoading: phoneLoading } = usePhoneLead();
   const { user, openAuthModal, isAuthModalOpen, closeAuthModal } = useAuth();
+  
+  // Output playback hook (shared with Ghost Mode) - must be after useAuth() to access user
+  const { isOutputEnabled, toggleOutput } = useOutputPlayback({
+    enabled: false, // Controlled by gesture, not prop
+    userId: user?.id,
+    location: location ? { lat: location.lat, lng: location.lng, accuracy: 0 } : null,
+    radiusM: 100,
+  });
+
+  // 5-tap gesture on description text - toggle output playback
+  const { onPointerDown: onDescriptionTap, onClick: onDescriptionClick } = useMultiTap({
+    count: 5,
+    windowMs: 2500,
+    onTrigger: async () => {
+      console.log('🔊 5-tap gesture on description - toggling output playback');
+      await toggleOutput();
+    },
+  });
+
+  // 5-tap gesture on "Time Machine" text - open dev portal
+  const { onPointerDown: onTitleTap, onClick: onTitleClick } = useMultiTap({
+    count: 5,
+    windowMs: 2500,
+    onTrigger: () => {
+      console.log('🔓 5-tap gesture on title - opening dev portal');
+      toast.info('Opening Dev Portal...');
+      navigate('/dev');
+    },
+  });
   const recordingCountRef = useRef(0);
   const locationHeader = useLocationHeader(location);
 
@@ -278,7 +311,15 @@ export function InputPage({ mode }: InputPageProps) {
       {/* Login Header - only show in normal mode */}
       {mode === 'normal' && (
         <div className="absolute top-0 left-0 right-0 p-4 flex justify-between items-center z-10">
-          <div className="font-mono text-white text-sm">Time Machine</div>
+          {/* Time Machine text - 5 taps to open dev portal */}
+          <div 
+            className="font-mono text-white text-sm cursor-pointer select-text"
+            onPointerDown={onTitleTap}
+            onClick={onTitleClick}
+            style={{ userSelect: 'text', WebkitUserSelect: 'text' }}
+          >
+            Time Machine
+          </div>
           <div className="flex gap-2">
             {user ? (
               <span className="font-mono text-white text-sm">{user.email}</span>
@@ -333,9 +374,14 @@ export function InputPage({ mode }: InputPageProps) {
         </div>
       </div>
 
-      {/* Terminal-style description */}
+      {/* Terminal-style description - 5 taps to toggle output playback */}
       <div className="w-full max-w-2xl mb-8">
-        <div className="font-mono text-lg md:text-xl lg:text-2xl text-gray-400 leading-loose p-6 md:p-8">
+        <div 
+          className="font-mono text-lg md:text-xl lg:text-2xl text-gray-400 leading-loose p-6 md:p-8 cursor-text select-text"
+          onPointerDown={onDescriptionTap}
+          onClick={onDescriptionClick}
+          style={{ userSelect: 'text', WebkitUserSelect: 'text' }}
+        >
           This is a <span className="text-[0.4em]">(fucking)</span> Time Machine. We believe this could change the world, and we need your help. Record now, and come back to your current location in the future to interact with the sound of the past. Thank you for your time.
         </div>
       </div>

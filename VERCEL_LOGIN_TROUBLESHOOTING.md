@@ -112,3 +112,7 @@ If you see service worker errors:
 3. Verify Supabase project URL and key are correct
 4. Test Supabase connection directly: `curl https://iwwvjecrvgrdyptxhnwj.supabase.co/rest/v1/`
 
+
+
+
+

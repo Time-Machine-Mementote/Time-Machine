@@ -6,6 +6,8 @@ import { useGeofencing } from '@/hooks/useGeofencing';
 import { AddMemorySheet } from '@/components/AddMemorySheet';
 import { DevPortal } from '@/components/DevPortal';
 import { SecretCodeWindow } from '@/components/SecretCodeWindow';
+import { DJAudioRack } from '@/components/DJAudioRack';
+import { audioQueue } from '@/utils/audioQueue';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { X, Search, Filter, ChevronDown, ChevronUp, Play, Pause, MapPinned, Ghost, Loader2, Volume2, Home } from 'lucide-react';
@@ -13,10 +15,18 @@ import { useNavigate } from 'react-router-dom';
 import { BERKELEY_CAMPUS_CENTER, BERKELEY_CAMPUS_ZOOM } from '@/types/memory';
 import type { Memory, UserLocation } from '@/types/memory';
 import { supabase } from '@/integrations/supabase/client';
-import { audioQueue } from '@/utils/audioQueue';
 import { getMemoriesInRadius } from '@/services/memoryApi';
 import { toast } from 'sonner';
 import { useAuth } from '@/contexts/AuthContext';
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog';
 
 // Set Mapbox access token
 const MAPBOX_TOKEN = import.meta.env.VITE_MAPBOX_TOKEN;
@@ -60,6 +70,31 @@ export function MapScreen({ userId, showOverlay = true, filterUserId, showAllMem
   const [startDate, setStartDate] = useState<string>('');
   const [endDate, setEndDate] = useState<string>('');
   const [activeDateFilter, setActiveDateFilter] = useState<{ start?: string; end?: string }>({});
+  
+  // DJ Audio Rack state
+  const [showNotReadyDialog, setShowNotReadyDialog] = useState(false);
+  const [showDJ, setShowDJ] = useState(false);
+  
+  // Debug: log when showDJ changes
+  useEffect(() => {
+    console.log('MapScreen: showDJ changed to:', showDJ);
+  }, [showDJ]);
+  const [audioElement, setAudioElement] = useState<HTMLAudioElement | null>(null);
+  
+  // Corner tap tracking for DJ rack toggle
+  const cornerTapRef = useRef<{
+    topLeft: number[];
+    topRight: number[];
+    bottomLeft: number[];
+    bottomRight: number[];
+    timer: NodeJS.Timeout | null;
+  }>({
+    topLeft: [],
+    topRight: [],
+    bottomLeft: [],
+    bottomRight: [],
+    timer: null,
+  });
 
   // Audio player state
   const audioRef = useRef<HTMLAudioElement | null>(null);
@@ -524,6 +559,88 @@ export function MapScreen({ userId, showOverlay = true, filterUserId, showAllMem
   // Track output playing state - stays true when Output is clicked until turned off
   // Don't automatically update based on currentlyPlaying - only on button click
 
+  // Get audio element from audioQueue for DJ rack
+  useEffect(() => {
+    const updateAudioElement = () => {
+      const element = audioQueue.getPrimaryAudioElement();
+      setAudioElement(element);
+    };
+    
+    // Check immediately and then periodically
+    updateAudioElement();
+    const interval = setInterval(updateAudioElement, 1000);
+    
+    return () => clearInterval(interval);
+  }, []);
+
+  // Keyboard shortcut handler for DJ rack (Ctrl+Shift+D / Cmd+Shift+D)
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      const isMac = navigator.platform.toUpperCase().indexOf('MAC') >= 0;
+      const modifier = isMac ? e.metaKey : e.ctrlKey;
+      
+      if (modifier && e.shiftKey && e.key === 'D') {
+        e.preventDefault();
+        setShowDJ(prev => !prev);
+      }
+    };
+    
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, []);
+
+  // Corner tap handler for DJ rack toggle (3 taps in each corner within 6 seconds)
+  useEffect(() => {
+    const handleClick = (e: MouseEvent) => {
+      const target = e.target as HTMLElement;
+      if (target.closest('button') || target.closest('[role="dialog"]')) return;
+      
+      const windowWidth = window.innerWidth;
+      const windowHeight = window.innerHeight;
+      const cornerSize = 100; // 100px corner detection area
+      const x = e.clientX;
+      const y = e.clientY;
+      
+      let corner: 'topLeft' | 'topRight' | 'bottomLeft' | 'bottomRight' | null = null;
+      
+      // Detect which corner
+      if (x < cornerSize && y < cornerSize) {
+        corner = 'topLeft';
+      } else if (x > windowWidth - cornerSize && y < cornerSize) {
+        corner = 'topRight';
+      } else if (x < cornerSize && y > windowHeight - cornerSize) {
+        corner = 'bottomLeft';
+      } else if (x > windowWidth - cornerSize && y > windowHeight - cornerSize) {
+        corner = 'bottomRight';
+      }
+      
+      if (!corner) return;
+      
+      const now = Date.now();
+      const taps = cornerTapRef.current[corner];
+      
+      // Add tap timestamp
+      taps.push(now);
+      
+      // Keep only taps within last 6 seconds
+      const recentTaps = taps.filter(t => now - t < 6000);
+      cornerTapRef.current[corner] = recentTaps;
+      
+      // If 3 taps in this corner, toggle DJ rack
+      if (recentTaps.length >= 3) {
+        setShowDJ(prev => !prev);
+        // Reset all corners
+        cornerTapRef.current.topLeft = [];
+        cornerTapRef.current.topRight = [];
+        cornerTapRef.current.bottomLeft = [];
+        cornerTapRef.current.bottomRight = [];
+      }
+    };
+    
+    window.addEventListener('click', handleClick);
+    return () => window.removeEventListener('click', handleClick);
+  }, []);
+
   // Secret code handler - double click on white overlay to open secret code window
   useEffect(() => {
     if (!showOverlay) return; // Only on main route with overlay
@@ -581,6 +698,13 @@ export function MapScreen({ userId, showOverlay = true, filterUserId, showAllMem
   // Handle Output button - toggle audio playback
   // State only changes on user click - never automatically
   const handleOutputClick = useCallback(async () => {
+    // On exhibition site (showOverlay = true), show "not ready" dialog
+    if (showOverlay) {
+      setShowNotReadyDialog(true);
+      return;
+    }
+    
+    // On /map route, toggle audio playback normally
     if (isMuted) {
       // CRITICAL: Unlock audio FIRST - must happen synchronously in click handler for mobile
       // This plays a silent sound to "warm up" audio elements on iOS/Android
@@ -614,7 +738,7 @@ export function MapScreen({ userId, showOverlay = true, filterUserId, showAllMem
       setIsOutputPlaying(false); // Turn black - only changes on next click
       console.log('🔇 Audio output disabled');
     }
-  }, [isMuted, unmute, mute, location]);
+  }, [isMuted, unmute, mute, location, showOverlay]);
 
   // Stop continuous preview playback
   const stopPreviewPlayback = useCallback(() => {
@@ -1197,26 +1321,43 @@ export function MapScreen({ userId, showOverlay = true, filterUserId, showAllMem
       {/* White Overlay - Covers the entire map (only if showOverlay is true) */}
       {showOverlay && (
         <>
+          {/* White background overlay - pointer-events: none so buttons can be clicked */}
           <div 
             className="absolute inset-0 bg-white"
-            style={{ zIndex: 10, pointerEvents: 'auto' }}
+            style={{ zIndex: 10, pointerEvents: 'none' }}
           />
 
           {/* Input and Output Buttons - Split screen top/bottom */}
+          {/* Higher z-index and explicit pointer-events to ensure clickability */}
           <div 
-            className="absolute inset-0 flex flex-col z-20"
+            className="absolute inset-0 flex flex-col z-30"
             style={{ pointerEvents: 'auto' }}
           >
         {/* Output Button - Top half */}
+        {/* Ensure button is clickable with explicit pointer-events and z-index */}
         <Button
-          onClick={handleOutputClick}
+          onClick={(e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            console.log('Output button clicked, isMuted:', isMuted, 'showOverlay:', showOverlay);
+            handleOutputClick();
+          }}
           variant="outline"
-          className={`w-full h-1/2 font-robotic rounded-none border-2 border-b-0 focus:outline-none focus:ring-0 ${
+          className={`pointer-events-auto w-full h-1/2 font-robotic rounded-none border-2 border-b-0 focus:outline-none focus:ring-0 ${
             isOutputPlaying 
               ? 'bg-white text-black border-black hover:bg-white hover:text-black' 
               : 'bg-black text-white border-white hover:bg-black hover:text-white'
           }`}
-          style={{ borderRadius: '0', outline: 'none', boxShadow: 'none' }}
+          style={{ 
+            borderRadius: '0', 
+            outline: 'none', 
+            boxShadow: 'none',
+            pointerEvents: 'auto',
+            zIndex: 31,
+            position: 'relative',
+            cursor: 'pointer',
+          }}
+          disabled={false}
         >
           <span className="text-2xl sm:text-3xl">Output</span>
         </Button>
@@ -1260,6 +1401,15 @@ export function MapScreen({ userId, showOverlay = true, filterUserId, showAllMem
         onClose={() => setShowDevPortal(false)}
         userLocation={location ? { lat: location.lat, lng: location.lng, accuracy: accuracy || 0 } : null}
         userId={userId}
+        showDJ={showDJ}
+        onToggleDJ={() => {
+          console.log('MapScreen: onToggleDJ called, current showDJ:', showDJ);
+          setShowDJ(prev => {
+            console.log('MapScreen: Setting showDJ to:', !prev);
+            return !prev;
+          });
+        }}
+        audioElement={audioElement}
       />
 
       {/* Secret Code Window */}
@@ -1269,6 +1419,20 @@ export function MapScreen({ userId, showOverlay = true, filterUserId, showAllMem
           onClose={() => setShowSecretCode(false)}
         />
       )}
+
+      {/* Not Ready Dialog - Exhibition Site */}
+      <AlertDialog open={showNotReadyDialog} onOpenChange={setShowNotReadyDialog}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>The worlds not ready</AlertDialogTitle>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogAction onClick={() => setShowNotReadyDialog(false)}>
+              OK
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
 
       {/* Memory Info Panel - Fixed at bottom when pin is clicked (only on /map route) */}
       {!showOverlay && selectedMemory && (
@@ -1375,6 +1539,26 @@ export function MapScreen({ userId, showOverlay = true, filterUserId, showAllMem
             </p>
           )}
         </div>
+      )}
+
+      {/* Enable Audio Button - Minimal button for user gesture (only on /map route, when not playing) */}
+      {!showOverlay && isMuted && (
+        <div className="absolute top-4 left-4 z-40">
+          <Button
+            onClick={handleOutputClick}
+            variant="outline"
+            size="sm"
+            className="font-robotic rounded-none border-2 bg-black text-white border-white hover:bg-white hover:text-black text-xs"
+            style={{ borderRadius: '0' }}
+          >
+            Enable Audio
+          </Button>
+        </div>
+      )}
+
+      {/* DJ Audio Rack - Shown when toggled (works in Dev Portal or on map) */}
+      {showDJ && !showOverlay && (
+        <DJAudioRack audioElement={audioElement} />
       )}
     </div>
   );

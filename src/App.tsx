@@ -9,6 +9,8 @@ import { InputOnlyPage } from "./pages/InputOnlyPage";
 import { InputPage } from "./pages/InputPage";
 import { ExhibitionPage } from "./pages/ExhibitionPage";
 import { DevPortalPage } from "./pages/DevPortalPage";
+import { SecretCodePage } from "./pages/SecretCodePage";
+import { LoginPage } from "./pages/LoginPage";
 import { AuthProvider, useAuth } from "@/contexts/AuthContext";
 import { INPUT_ONLY_MODE } from "@/config/featureFlags";
 
@@ -59,8 +61,10 @@ function InputOnlyRoutes() {
   return (
     <Routes>
       <Route path="/" element={<InputPage mode="normal" />} />
+      <Route path="/login" element={<LoginPage />} />
       <Route path="/exhibition" element={<ExhibitionPage />} />
       <Route path="/dev" element={<DevPortalPage />} />
+      <Route path="/dev/secret-code" element={<SecretCodePage />} />
       {/* Keep old routes available but commented out - can re-enable later */}
       {/* <Route path="/map" element={<MapScreen userId={undefined} showOverlay={true} />} /> */}
       {/* <Route path="/map-full" element={<MapScreen userId={undefined} showOverlay={false} />} /> */}

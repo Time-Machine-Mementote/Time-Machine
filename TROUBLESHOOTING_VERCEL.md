@@ -90,3 +90,8 @@ console.log('Supabase Key:', import.meta.env.VITE_SUPABASE_ANON_KEY ? 'Present' 
 
 If these show `undefined` or `Missing`, environment variables are not set correctly in Vercel.
 
+
+
+
+
+
