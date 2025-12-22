@@ -353,35 +353,6 @@ export function InputOnlyPage() {
         <div className="font-mono text-white text-sm select-text" style={{ userSelect: 'text', WebkitUserSelect: 'text' }}>
           Time Machine
         </div>
-        <div className="flex gap-2">
-          {user ? (
-            <span className="font-mono text-white text-sm">{user.email}</span>
-          ) : (
-              <Button
-                onClick={() => navigate('/login')}
-                variant="outline"
-                size="sm"
-                className="font-mono bg-black text-black border-black hover:bg-black hover:text-black focus-visible:ring-0 focus-visible:ring-offset-0 focus-visible:outline-none"
-                style={{
-                  backgroundColor: '#000000',
-                  color: '#000000',
-                  borderColor: '#000000'
-                }}
-                onMouseEnter={(e) => {
-                  e.currentTarget.style.backgroundColor = '#000000';
-                  e.currentTarget.style.color = '#000000';
-                  e.currentTarget.style.borderColor = '#000000';
-                }}
-                onMouseLeave={(e) => {
-                  e.currentTarget.style.backgroundColor = '#000000';
-                  e.currentTarget.style.color = '#000000';
-                  e.currentTarget.style.borderColor = '#000000';
-                }}
-              >
-                Log in
-              </Button>
-          )}
-        </div>
       </div>
 
       {/* Corner tap zones for Dev Portal unlock (3 taps per corner, 4 corners) */}

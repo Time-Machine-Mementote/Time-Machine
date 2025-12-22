@@ -353,20 +353,6 @@ export function InputPage({ mode }: InputPageProps) {
           <div className="font-mono text-white text-sm select-text" style={{ userSelect: 'text', WebkitUserSelect: 'text' }}>
             Time Machine
           </div>
-          <div className="flex gap-2">
-            {user ? (
-              <span className="font-mono text-white text-sm">{user.email}</span>
-            ) : (
-              <Button
-                onClick={() => navigate('/login')}
-                variant="outline"
-                size="sm"
-                className="font-mono bg-black text-white border-white hover:bg-white hover:text-black"
-              >
-                Log in
-              </Button>
-            )}
-          </div>
         </div>
       )}
 
