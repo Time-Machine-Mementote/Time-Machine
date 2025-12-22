@@ -91,12 +91,13 @@ export function InputPage({ mode }: InputPageProps) {
     },
   });
 
-  // 5-tap gesture on "Time Machine" text - open dev portal
-  const { onPointerDown: onTitleTap, onClick: onTitleClick } = useMultiTap({
-    count: 5,
-    windowMs: 2500,
+  // 2-tap gesture on "Coming Soon" modal - open dev portal
+  const { onPointerDown: onComingSoonTap, onClick: onComingSoonClick } = useMultiTap({
+    count: 2,
+    windowMs: 2000,
     onTrigger: () => {
-      console.log('🔓 5-tap gesture on title - opening dev portal');
+      console.log('🔓 2-tap gesture on coming soon modal - opening dev portal');
+      setShowComingSoonModal(false); // Close the modal first
       toast.info('Opening Dev Portal...');
       // Use setTimeout to ensure navigation happens after toast is shown
       setTimeout(() => {
@@ -348,13 +349,8 @@ export function InputPage({ mode }: InputPageProps) {
       {/* Login Header - only show in normal mode */}
       {mode === 'normal' && (
         <div className="absolute top-0 left-0 right-0 p-4 flex justify-between items-center z-10">
-          {/* Time Machine text - 5 taps to open dev portal */}
-          <div 
-            className="font-mono text-white text-sm cursor-pointer select-text"
-            onPointerDown={onTitleTap}
-            onClick={onTitleClick}
-            style={{ userSelect: 'text', WebkitUserSelect: 'text' }}
-          >
+          {/* Time Machine text */}
+          <div className="font-mono text-white text-sm select-text" style={{ userSelect: 'text', WebkitUserSelect: 'text' }}>
             Time Machine
           </div>
           <div className="flex gap-2">
@@ -483,7 +479,11 @@ export function InputPage({ mode }: InputPageProps) {
 
       {/* Coming Soon Modal */}
       <Dialog open={showComingSoonModal} onOpenChange={setShowComingSoonModal}>
-        <DialogContent className="bg-black border-2 border-white text-white sm:max-w-md [&>button]:hidden">
+        <DialogContent 
+          className="bg-black border-2 border-white text-white sm:max-w-md [&>button]:hidden"
+          onPointerDown={onComingSoonTap}
+          onClick={onComingSoonClick}
+        >
           <DialogHeader>
             <DialogTitle className="font-mono text-white text-xl">
               Output is coming soon.
