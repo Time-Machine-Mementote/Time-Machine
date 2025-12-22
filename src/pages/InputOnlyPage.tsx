@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import { Button } from '@/components/ui/button';
 import { PhoneModal } from '@/components/PhoneModal';
 import { DevPortal } from '@/components/DevPortal';
@@ -34,11 +34,45 @@ export function InputOnlyPage() {
   const { user, openAuthModal, isAuthModalOpen, closeAuthModal } = useAuth();
   
   // Output playback hook (shared with Ghost Mode) - must be after useAuth() to access user
+  // Request location function - ensures location is available before starting playback
+  const requestLocationIfNeeded = useCallback(async (): Promise<import('@/types/memory').UserLocation | null> => {
+    return new Promise((resolve) => {
+      if (location && location.lat && location.lng) {
+        resolve({ lat: location.lat, lng: location.lng, accuracy: 0, timestamp: Date.now() });
+        return;
+      }
+
+      if (!navigator.geolocation) {
+        resolve(null);
+        return;
+      }
+
+      navigator.geolocation.getCurrentPosition(
+        (position) => {
+          const newLocation = {
+            lat: position.coords.latitude,
+            lng: position.coords.longitude,
+            accuracy: position.coords.accuracy,
+            timestamp: Date.now(),
+          };
+          setLocation({ lat: newLocation.lat, lng: newLocation.lng });
+          resolve(newLocation);
+        },
+        (error) => {
+          console.warn('Geolocation error:', error);
+          setLocationError('Location access denied');
+          resolve(null);
+        },
+        { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 }
+      );
+    });
+  }, [location]);
+
   const { isOutputEnabled, toggleOutput } = useOutputPlayback({
     enabled: false, // Controlled by gesture, not prop
     userId: user?.id,
-    location: location ? { lat: location.lat, lng: location.lng, accuracy: 0 } : null,
-    radiusM: 100,
+    location: location ? { lat: location.lat, lng: location.lng, accuracy: 0, timestamp: Date.now() } : null,
+    requestLocation: requestLocationIfNeeded,
   });
 
   // 5-tap gesture on description text - toggle output playback

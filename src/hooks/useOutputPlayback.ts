@@ -1,8 +1,8 @@
 // Shared hook for output playback (used by Ghost Mode and secret triggers)
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { audioQueue } from '@/utils/audioQueue';
-import { getMemoriesInRadius } from '@/services/memoryApi';
-import type { Memory, UserLocation } from '@/types/memory';
+import { startAreaOutputPlayback, refreshAreaOutputMemories, OUTPUT_RADIUS_M } from '@/utils/areaOutputPlayback';
+import type { UserLocation } from '@/types/memory';
 import { toast } from 'sonner';
 
 interface UseOutputPlaybackOptions {
@@ -10,6 +10,8 @@ interface UseOutputPlaybackOptions {
   userId?: string;
   location?: UserLocation | null;
   radiusM?: number;
+  // Optional: function to request location if not available
+  requestLocation?: () => Promise<UserLocation | null>;
 }
 
 interface UseOutputPlaybackReturn {
@@ -17,30 +19,6 @@ interface UseOutputPlaybackReturn {
   toggleOutput: () => Promise<void>;
   startOutput: () => Promise<void>;
   stopOutput: () => void;
-}
-
-// Helper function to filter memories by radius (same logic as Ghost Mode)
-function filterMemoriesByRadius(memories: Memory[], lat: number, lng: number): Memory[] {
-  return memories.filter(memory => {
-    if (!memory.latitude || !memory.longitude || !memory.radius_m) {
-      return false;
-    }
-    const distance = calculateDistance(lat, lng, memory.latitude, memory.longitude);
-    return distance <= memory.radius_m;
-  });
-}
-
-// Helper function to calculate distance (same as Ghost Mode)
-function calculateDistance(lat1: number, lng1: number, lat2: number, lng2: number): number {
-  const R = 6371000; // Earth radius in meters
-  const dLat = (lat2 - lat1) * Math.PI / 180;
-  const dLng = (lng2 - lng1) * Math.PI / 180;
-  const a = 
-    Math.sin(dLat / 2) * Math.sin(dLat / 2) +
-    Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) *
-    Math.sin(dLng / 2) * Math.sin(dLng / 2);
-  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
-  return R * c;
 }
 
 /**
@@ -51,7 +29,8 @@ export function useOutputPlayback({
   enabled = false,
   userId,
   location,
-  radiusM = 100,
+  radiusM = OUTPUT_RADIUS_M,
+  requestLocation,
 }: UseOutputPlaybackOptions): UseOutputPlaybackReturn {
   const [isOutputEnabled, setIsOutputEnabled] = useState(false);
   const intervalRef = useRef<NodeJS.Timeout | null>(null);
@@ -70,86 +49,71 @@ export function useOutputPlayback({
     localStorage.setItem('tm_output_enabled', isOutputEnabled ? 'true' : 'false');
   }, [isOutputEnabled]);
 
-  // Add memories to queue (same logic as Ghost Mode)
-  const addMemoriesToQueue = useCallback(async (lat: number, lng: number, memories: Memory[]) => {
-    if (!userId) return;
-
-    for (const memory of memories) {
-      if (!memory.audio_url) continue;
-      
-      const isOwner = memory.author_id === userId;
-      const isFriend = false; // Could be enhanced with friend checking
-      
-      audioQueue.addMemory(
-        memory,
-        { lat, lng, accuracy: 0 },
-        isOwner,
-        isFriend,
-        false // skipDistanceCheck
-      );
-    }
-  }, [userId]);
-
-  // Start continuous playback (same as Ghost Mode)
+  // Start continuous playback - uses shared utility (same as Ghost Mode)
   const startOutput = useCallback(async () => {
-    if (!location || !location.lat || !location.lng) {
-      toast.error('Location required', {
-        description: 'Please enable location access to start output playback.',
-      });
-      return;
-    }
-
-    try {
-      // Unlock audio first (required for mobile)
-      await audioQueue.unlockAudio();
-
-      // Clear existing queue
-      audioQueue.clear();
-
-      // Fetch memories in radius
-      const memoriesInBoundingBox = await getMemoriesInRadius(location.lat, location.lng, radiusM);
-      const memoriesInRadius = filterMemoriesByRadius(memoriesInBoundingBox, location.lat, location.lng);
-      const memoriesWithAudio = memoriesInRadius.filter(m => m.audio_url);
-
-      if (memoriesWithAudio.length === 0) {
-        toast.info('No audio memories found', {
-          description: `No memories with audio found within ${radiusM}m radius.`,
+    // Step 1: Ensure location is available
+    let currentLocation = location;
+    
+    if (!currentLocation || !currentLocation.lat || !currentLocation.lng) {
+      // Try to request location if function provided
+      if (requestLocation) {
+        console.log('[output] Location not available, requesting...');
+        currentLocation = await requestLocation();
+      }
+      
+      if (!currentLocation || !currentLocation.lat || !currentLocation.lng) {
+        toast.error('Location required', {
+          description: 'Location required for output playback. Please enable location access.',
         });
         return;
       }
-
-      // Add initial memories to queue
-      await addMemoriesToQueue(location.lat, location.lng, memoriesWithAudio);
-
-      // Unmute to start playing
-      audioQueue.unmute();
-      setIsOutputEnabled(true);
-      isInitializedRef.current = true;
-
-      // Start continuous playback - periodically re-add memories to keep queue filled
-      intervalRef.current = setInterval(async () => {
-        try {
-          const freshInBoundingBox = await getMemoriesInRadius(location.lat, location.lng, radiusM);
-          const freshInRadius = filterMemoriesByRadius(freshInBoundingBox, location.lat, location.lng);
-          const freshWithAudio = freshInRadius.filter(m => m.audio_url);
-          if (freshWithAudio.length > 0) {
-            await addMemoriesToQueue(location.lat, location.lng, freshWithAudio);
-          }
-        } catch (err) {
-          console.warn('[output] Background fetch error:', err);
-        }
-      }, 10000); // Refresh every 10 seconds
-
-      toast.success('Output enabled', {
-        description: `Playing ${memoriesWithAudio.length} memories in radius.`,
-      });
-    } catch (error) {
-      console.error('[output] Start error:', error);
-      toast.error('Failed to start output', {
-        description: error instanceof Error ? error.message : 'Unknown error',
-      });
     }
-  }, [location, radiusM, userId, addMemoriesToQueue]);
+
+    // Step 2: Use shared playback function (same as Ghost Mode)
+    const result = await startAreaOutputPlayback(currentLocation, userId, radiusM);
+
+    if (!result.success) {
+      if (result.memoriesFound === 0) {
+        toast.info('No memories found', {
+          description: `No memories found within ${radiusM}m radius.`,
+        });
+      } else if (result.memoriesWithAudio === 0) {
+        toast.info('No audio memories found', {
+          description: `Found ${result.memoriesFound} memories but none have audio recordings.`,
+        });
+      } else {
+        toast.error('Failed to start output', {
+          description: result.error || 'Unknown error',
+        });
+      }
+      return;
+    }
+
+    // Step 3: Mark as enabled and start continuous refresh
+    setIsOutputEnabled(true);
+    isInitializedRef.current = true;
+
+    // Start continuous playback - periodically refresh memories (same as Ghost Mode)
+    // Use a ref to track the location used for refresh (updates if location state changes)
+    const locationForRefreshRef = { current: currentLocation };
+    intervalRef.current = setInterval(async () => {
+      try {
+        // Use latest location from state if available, otherwise use stored location
+        // This allows the refresh to use updated location if user moves
+        const latestLocation = location || locationForRefreshRef.current;
+        if (latestLocation && latestLocation.lat && latestLocation.lng) {
+          locationForRefreshRef.current = latestLocation; // Update ref for next iteration
+          await refreshAreaOutputMemories(latestLocation, userId, radiusM);
+        }
+      } catch (err) {
+        console.warn('[output] Background refresh error:', err);
+      }
+    }, 10000); // Refresh every 10 seconds (same as Ghost Mode)
+
+    toast.success('Output enabled', {
+      description: `Playing ${result.memoriesWithAudio} memories in radius.`,
+    });
+  }, [location, radiusM, userId, requestLocation]);
 
   // Stop playback
   const stopOutput = useCallback(() => {
