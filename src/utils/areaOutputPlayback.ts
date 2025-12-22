@@ -5,8 +5,8 @@ import { getMemoriesInRadius } from '@/services/memoryApi';
 import type { Memory, UserLocation } from '@/types/memory';
 import { DEFAULT_GEOFENCE_CONFIG } from '@/types/memory';
 
-// Standard radius constant - matches Ghost Mode
-export const OUTPUT_RADIUS_M = DEFAULT_GEOFENCE_CONFIG.maxDistance; // 100 meters
+// Standard radius constant - matches Ghost Mode (100 meters)
+export const OUTPUT_RADIUS_M = DEFAULT_GEOFENCE_CONFIG?.maxDistance ?? 100;
 
 // Helper function to calculate distance (Haversine formula)
 function calculateDistance(lat1: number, lng1: number, lat2: number, lng2: number): number {

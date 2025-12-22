@@ -36,13 +36,15 @@ export function useOutputPlayback({
   const intervalRef = useRef<NodeJS.Timeout | null>(null);
   const isInitializedRef = useRef(false);
   const isStartingRef = useRef(false); // Guard against concurrent start calls
+  const isOutputEnabledRef = useRef(false); // Track enabled state in ref to avoid stale closures
 
   // Note: We don't auto-load from localStorage to avoid conflicts
   // The state should be controlled explicitly by user actions
   // localStorage is only used for persistence, not initialization
 
-  // Persist state to localStorage
+  // Persist state to localStorage and update ref
   useEffect(() => {
+    isOutputEnabledRef.current = isOutputEnabled;
     localStorage.setItem('tm_output_enabled', isOutputEnabled ? 'true' : 'false');
   }, [isOutputEnabled]);
 
@@ -54,7 +56,7 @@ export function useOutputPlayback({
       return;
     }
     
-    if (isOutputEnabled) {
+    if (isOutputEnabledRef.current) {
       console.log('[output] Already enabled, ignoring start call');
       return;
     }
@@ -127,12 +129,12 @@ export function useOutputPlayback({
     } finally {
       isStartingRef.current = false;
     }
-  }, [location, radiusM, userId, requestLocation, isOutputEnabled]);
+  }, [location, radiusM, userId, requestLocation]);
 
   // Stop playback
   const stopOutput = useCallback(() => {
     // Guard: don't stop if already stopped
-    if (!isOutputEnabled) {
+    if (!isOutputEnabledRef.current) {
       console.log('[output] Already disabled, ignoring stop call');
       return;
     }
@@ -171,7 +173,7 @@ export function useOutputPlayback({
     // Note: We intentionally don't auto-stop when enabled=false
     // The gesture toggle should be the only way to stop
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [enabled]);
+  }, [enabled, isOutputEnabled, isInitializedRef, location, startOutput]);
 
   // Cleanup on unmount
   useEffect(() => {
