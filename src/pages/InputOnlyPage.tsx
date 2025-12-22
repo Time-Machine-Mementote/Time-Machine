@@ -9,7 +9,7 @@ import { usePhoneLead } from '@/hooks/usePhoneLead';
 import { useAuth } from '@/contexts/AuthContext';
 import { supabase } from '@/integrations/supabase/client';
 import { uploadAudioToStorage } from '@/utils/audioStorage';
-import { isDevUnlocked } from '@/utils/devPortalUnlock';
+import { isDevUnlocked, setDevUnlocked } from '@/utils/devPortalUnlock';
 import { useSecretTapUnlock } from '@/hooks/useSecretTapUnlock';
 import { useMultiTap } from '@/hooks/useMultiTap';
 import { useOutputPlayback } from '@/hooks/useOutputPlayback';
@@ -91,10 +91,10 @@ export function InputOnlyPage() {
     windowMs: 2000,
     onTrigger: () => {
       console.log('🔓 2-tap gesture on coming soon modal - opening dev portal');
-      console.log('Current location:', window.location.href);
+      // Unlock dev portal first
+      setDevUnlocked();
       toast.info('Opening Dev Portal...');
-      // Use window.location.href directly for reliable navigation
-      // Close modal first to avoid any interference
+      // Close modal and navigate
       setShowComingSoonModal(false);
       setTimeout(() => {
         console.log('Navigating to /dev...');
